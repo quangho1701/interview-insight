@@ -4,6 +4,7 @@ import os
 from typing import Generator
 
 import pytest
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 # Set test environment variables before importing app modules
@@ -50,23 +51,43 @@ def setup_database(test_engine):
 
 @pytest.fixture
 def db_session(test_engine, setup_database) -> Generator[Session, None, None]:
-    """Provide a transactional database session for tests."""
-    with Session(test_engine) as session:
-        yield session
-        # Rollback any uncommitted changes
-        session.rollback()
+    """Provide a transactional database session for tests.
+
+    Uses a nested transaction (SAVEPOINT) so that commits within the test
+    can be rolled back at the end.
+    """
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+
+    # Begin a nested transaction (savepoint)
+    nested = connection.begin_nested()
+
+    # If the session commits, restart the nested transaction
+    @event.listens_for(session, "after_transaction_end")
+    def restart_savepoint(session, trans):
+        nonlocal nested
+        if trans.nested and not trans._parent.nested:
+            nested = connection.begin_nested()
+
+    yield session
+
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture
-def client(test_engine, setup_database) -> Generator[TestClient, None, None]:
-    """Provide a test client with database session override."""
+def client(db_session, setup_database) -> Generator[TestClient, None, None]:
+    """Provide a test client with database session override.
+
+    Shares the same session as db_session fixture for proper transaction isolation.
+    """
     from app.core.database import get_session
     from app.main import app
 
     def get_test_session() -> Generator[Session, None, None]:
-        with Session(test_engine) as session:
-            yield session
-            session.rollback()
+        yield db_session
 
     app.dependency_overrides[get_session] = get_test_session
     with TestClient(app) as test_client:
