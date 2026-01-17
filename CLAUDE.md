@@ -47,11 +47,11 @@ apps/api/                       # FastAPI backend
 │   │   ├── deps.py             # Dependency injection (CurrentUser, SessionDep, S3ServiceDep)
 │   │   └── v1/
 │   │       ├── router.py       # Aggregates all endpoint routers
-│   │       └── endpoints/      # Route handlers (login, uploads)
+│   │       └── endpoints/      # Route handlers (login, uploads, jobs)
 │   ├── core/                   # config.py, database.py, security.py
 │   ├── models/                 # SQLModel ORM (User, Interviewer, InterviewAnalysis, ProcessingJob)
 │   ├── schemas/                # Pydantic request/response schemas
-│   ├── services/               # Business logic (s3_service.py)
+│   ├── services/               # Business logic (s3_service.py, job_service.py)
 │   └── main.py                 # FastAPI app, CORS, health check
 ├── tests/
 │   ├── conftest.py             # Fixtures: db_session, client (transactional rollback)
@@ -61,6 +61,7 @@ apps/api/                       # FastAPI backend
 
 apps/web/                       # Next.js frontend (scaffold only)
 workers/                        # ML processing worker (planned - Whisper, diarization, sentiment)
+docker/                         # Docker Compose files for local dev
 packages/                       # Shared libs (types, ui) - planned
 ```
 
@@ -91,7 +92,13 @@ packages/                       # Shared libs (types, ui) - planned
 ### File Upload Flow
 1. Client requests presigned URL via `/api/v1/uploads/presign`
 2. Client uploads directly to S3 using presigned URL
-3. Client confirms upload via `/api/v1/uploads/confirm` → creates ProcessingJob
+3. Client confirms upload via `/api/v1/uploads/confirm` → creates ProcessingJob → enqueues Celery task
+4. Client polls job status via `/api/v1/jobs/{job_id}`
+
+### Background Jobs
+- Celery app configured in `core/celery_utils.py` with Redis broker
+- Task enqueuing via `enqueue_interview_processing(job_id)` function
+- Task name constant: `TASK_PROCESS_INTERVIEW = "vibecheck.tasks.process_interview"`
 
 ## Naming Conventions
 
