@@ -1,0 +1,24 @@
+{
+  "name": "vibecheck",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.2.0",
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "engines": {
+    "node": ">=18"
+  }
+}
