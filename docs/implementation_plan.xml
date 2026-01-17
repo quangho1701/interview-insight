@@ -1,0 +1,135 @@
+<plan>
+    <title>Implementation Plan - Phase 3: File Upload &amp; S3 Integration</title>
+    <description>
+        This plan outlines the steps to implement secure file uploads using AWS S3 presigned URLs, integrated with the existing FastAPI backend and PostgreSQL database.
+    </description>
+    
+    <user_review_required>
+        <alert type="IMPORTANT">
+            <title>AWS Credentials</title>
+            <content>
+                This implementation requires AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET_NAME`) to be set in the `.env` file. Using **MinIO** or **LocalStack** for local development is recommended if real AWS credentials are not available.
+            </content>
+        </alert>
+    </user_review_required>
+
+    <proposed_changes>
+        <component name="dependencies">
+            <file_change type="MODIFY">
+                <path>d:/Interview Insights App/apps/api/requirements.txt</path>
+                <instructions>
+                    <instruction>Add `boto3>=1.34.0`</instruction>
+                    <instruction>Add `boto3-stubs[s3]>=1.34.0` (for type checking)</instruction>
+                </instructions>
+            </file_change>
+        </component>
+
+        <component name="apps/api/app/core">
+            <file_change type="MODIFY">
+                <path>d:/Interview Insights App/apps/api/app/core/config.py</path>
+                <instructions>
+                    <instruction>
+                        Add AWS settings to `Settings` class:
+                        - `aws_access_key_id: str`
+                        - `aws_secret_access_key: str`
+                        - `aws_region: str = "us-east-1"`
+                        - `s3_bucket_name: str`
+                    </instruction>
+                </instructions>
+            </file_change>
+        </component>
+
+        <component name="apps/api/app/services">
+            <file_change type="NEW">
+                <path>d:/Interview Insights App/apps/api/app/services/s3_service.py</path>
+                <instructions>
+                    <instruction>Create `S3Service` class.</instruction>
+                    <instruction>Initialize `boto3.client("s3")` using settings.</instruction>
+                    <instruction>Implement `generate_presigned_url(object_name: str, expiration: int = 3600) -> str`.</instruction>
+                    <instruction>Implement `delete_file(object_name: str)`.</instruction>
+                    <instruction>Use dependency injection to provide this service to API endpoints.</instruction>
+                </instructions>
+            </file_change>
+        </component>
+
+        <component name="apps/api/app/api/v1/endpoints">
+            <file_change type="NEW">
+                <path>d:/Interview Insights App/apps/api/app/api/v1/endpoints/uploads.py</path>
+                <instructions>
+                    <instruction>Create router for upload operations.</instruction>
+                    <instruction>
+                        **POST /uploads/presigned-url**
+                        - **Auth**: Required (`current_user`).
+                        - **Input**: Schema with `filename` (str), `content_type` (str).
+                        - **Logic**:
+                            1. Generate a unique `s3_key` (e.g., `uploads/{user_id}/{uuid}/{filename}`).
+                            2. Create a `ProcessingJob` record in DB with:
+                                - `user_id`: Current user.
+                                - `s3_audio_key`: The generated key.
+                                - `status`: `PENDING`.
+                            3. Call `S3Service.generate_presigned_url` for the key.
+                        - **Output**: JSON with `upload_url`, `job_id`, `s3_key`.
+                    </instruction>
+                    <instruction>
+                        **POST /uploads/{job_id}/confirm**
+                        - **Auth**: Required.
+                        - **Logic**:
+                            1. Verify job belongs to user.
+                            2. Update `ProcessingJob` status to `QUEUED`.
+                            3. (Future: Trigger Celery task here).
+                        - **Output**: JSON with updated job status.
+                    </instruction>
+                </instructions>
+            </file_change>
+            
+            <file_change type="MODIFY">
+                <path>d:/Interview Insights App/apps/api/app/api/v1/router.py</path>
+                <instructions>
+                    <instruction>Import `uploads` router.</instruction>
+                    <instruction>`api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])`</instruction>
+                </instructions>
+            </file_change>
+        </component>
+    </proposed_changes>
+
+    <verification_plan>
+        <automated_tests>
+            <description>I will add a new integration test file to verify the upload flow without hitting real AWS (using mocking).</description>
+            <file_test type="NEW">
+                <path>d:/Interview Insights App/apps/api/tests/integration/test_uploads.py</path>
+                <test_cases>
+                    <case>
+                        <name>Test Presigned URL Generation</name>
+                        <steps>
+                            <step>Mock `boto3.client`.</step>
+                            <step>Call `POST /api/v1/uploads/presigned-url`.</step>
+                            <step>Assert 200 OK.</step>
+                            <step>Assert `ProcessingJob` is created in DB with status `PENDING`.</step>
+                            <step>Assert returned URL matches mock.</step>
+                        </steps>
+                    </case>
+                    <case>
+                        <name>Test Job Confirmation</name>
+                        <steps>
+                            <step>Create a fixture job in DB.</step>
+                            <step>Call `POST /api/v1/uploads/{job_id}/confirm`.</step>
+                            <step>Assert `ProcessingJob` status updates to `QUEUED`.</step>
+                        </steps>
+                    </case>
+                    <case>
+                        <name>Test Unauthorized Access</name>
+                        <steps>
+                            <step>Attempt calls without JWT token.</step>
+                            <step>Assert 401 Unauthorized.</step>
+                        </steps>
+                    </case>
+                </test_cases>
+            </file_test>
+        </automated_tests>
+
+        <manual_verification>
+            <step>Set up .env: Configure `S3_BUCKET_NAME` (dummy value allowed if strictly mocking, but better to use real/localstack for end-to-end).</step>
+            <step>Run Tests: Execute `pytest apps/api/tests/integration/test_uploads.py`.</step>
+        </manual_verification>
+    </verification_plan>
+</plan>
