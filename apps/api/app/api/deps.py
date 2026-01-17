@@ -6,9 +6,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session, select
 
+from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.security import decode_access_token
 from app.models.user import User
+from app.services.s3_service import S3Service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login/access-token")
 
@@ -50,5 +52,14 @@ def get_current_user(
     return user
 
 
-# Type alias for dependency injection
+# Type aliases for dependency injection
 CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionDep = Annotated[Session, Depends(get_session)]
+
+
+def get_s3_service() -> S3Service:
+    """Get S3 service instance."""
+    return S3Service(get_settings())
+
+
+S3ServiceDep = Annotated[S3Service, Depends(get_s3_service)]
