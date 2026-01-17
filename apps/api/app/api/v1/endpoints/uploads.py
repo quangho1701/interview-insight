@@ -6,6 +6,7 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser, S3ServiceDep, SessionDep
+from app.core.celery_utils import enqueue_interview_processing
 from app.models.enums import JobStatus
 from app.models.processing_job import ProcessingJob
 from app.schemas.upload import (
@@ -97,6 +98,7 @@ def confirm_upload(
     session.commit()
     session.refresh(job)
 
-    # Future: Trigger Celery task here
+    # Trigger Celery task for async processing
+    enqueue_interview_processing(str(job.id))
 
     return JobConfirmResponse(job_id=job.id, status=job.status)

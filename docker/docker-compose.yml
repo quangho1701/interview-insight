@@ -31,6 +31,26 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    build:
+      context: ../workers
+      dockerfile: Dockerfile
+    container_name: vibecheck-worker
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: vibecheck
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
