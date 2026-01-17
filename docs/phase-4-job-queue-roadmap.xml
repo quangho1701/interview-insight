@@ -12,17 +12,23 @@
     <CurrentState>
       <Exists>
         <Item>FastAPI application with Authentication and Database connection</Item>
-        <Item>`ProcessingJob` model class (needs integration)</Item>
-        <Item>Redis service definition in `docker-compose.yml`</Item>
-        <Item>Empty `workers` directory structure</Item>
-        <Item>S3 configuration settings in API</Item>
+        <Item>`ProcessingJob` model class in `apps/api/app/models/processing_job.py`</Item>
+        <Item>`JobStatus` enum with PENDING, QUEUED, PROCESSING, COMPLETED, FAILED states</Item>
+        <Item>Redis service definition in `docker-compose.yml` (port 6379)</Item>
+        <Item>Empty `workers` directory structure (pyproject.toml, requirements.txt, README only)</Item>
+        <Item>S3 configuration and service in API</Item>
+        <Item>Upload endpoints that create ProcessingJob records (`POST /uploads/presigned-url`, `POST /uploads/{job_id}/confirm`)</Item>
+        <Item>Celery trigger stub in `uploads.py:100` (comment placeholder)</Item>
       </Exists>
       <Missing>
+        <Item>Celery dependency in API pyproject.toml</Item>
         <Item>Celery configuration and instance in API (Producer)</Item>
-        <Item>Worker application logic (Consumer entry point)</Item>
-        <Item>Job creation and status polling endpoints</Item>
+        <Item>Worker application code (no `workers/app/` directory exists)</Item>
+        <Item>Job status polling endpoint (`GET /jobs/{id}`)</Item>
         <Item>Worker service definition in `docker-compose.yml`</Item>
+        <Item>Worker Dockerfile</Item>
         <Item>Task definitions for interview processing</Item>
+        <Item>Database access layer for Worker</Item>
       </Missing>
     </CurrentState>
 
@@ -30,6 +36,7 @@
       <Item priority="High">Integrate **Celery** into the API to enable task offloading.</Item>
       <Item priority="High">Create a dedicated **Worker Service** to consume and execute tasks.</Item>
       <Item priority="High">Implement **Job State Tracking** (Pending -> Queued -> Processing -> Completed/Failed).</Item>
+      <Item priority="High">Ensure **Worker has database access** to update job status.</Item>
       <Item priority="Medium">Update **Docker Compose** to orchestrate the worker alongside API and Redis.</Item>
     </Strategy>
 
@@ -37,51 +44,74 @@
       <Step order="1" type="Dependencies">
         <Action>Install Celery and dependencies.</Action>
         <Details>
-          - `celery`: Task queue implementation
-          - `redis`: Redis client for Python
+          - Add `celery>=5.3.0` to API dependencies (not currently present)
+          - `redis>=5.0.0` already exists in both API and workers
+          - Workers pyproject.toml already has celery listed
         </Details>
         <Files>
           <File action="update">apps/api/pyproject.toml</File>
-          <File action="update">workers/pyproject.toml</File>
         </Files>
       </Step>
 
       <Step order="2" type="Configuration">
-        <Action>Configure Redis settings for API and Worker.</Action>
+        <Action>Configure Redis and Database settings for Worker.</Action>
         <Details>
-          Ensure `redis_url` is correctly defined in API configuration and create equivalent configuration for the Worker.
+          - API `redis_url` property already exists in `apps/api/app/core/config.py`
+          - Create Worker configuration mirroring API settings
+          - Worker needs both REDIS_URL and DATABASE_URL for job status updates
         </Details>
         <Files>
-          <File action="update">apps/api/app/core/config.py</File>
+          <File action="create">workers/app/__init__.py</File>
+          <File action="create">workers/app/core/__init__.py</File>
           <File action="create">workers/app/core/config.py</File>
+          <File action="create">workers/app/core/database.py</File>
         </Files>
       </Step>
 
       <Step order="3" type="Producer">
         <Action>Implement API Producer logic.</Action>
         <Details>
-          - Initialize Celery app in `apps/api/app/core/celery_utils.py`.
-          - Create `JobService` to handle DB record creation and task enqueueing.
-          - Implement `POST /jobs` and `GET /jobs/{id}` endpoints.
+          - Initialize Celery app in `apps/api/app/core/celery_utils.py`
+          - Create `JobService` to handle task enqueueing (job creation already in uploads)
+          - Implement `GET /jobs/{id}` endpoint for status polling
+          - Note: `POST /jobs` is NOT needed - uploads already create jobs
+          - Update `uploads.py` confirm endpoint to trigger Celery task
+          - **Important:** Celery app name and task names must match exactly between API and Worker
         </Details>
         <Files>
           <File action="create">apps/api/app/core/celery_utils.py</File>
           <File action="create">apps/api/app/services/job_service.py</File>
           <File action="create">apps/api/app/api/v1/endpoints/jobs.py</File>
-          <File action="update">apps/api/app/main.py</File>
+          <File action="update">apps/api/app/api/v1/router.py</File>
+          <File action="update">apps/api/app/api/v1/endpoints/uploads.py</File>
         </Files>
       </Step>
 
       <Step order="4" type="Consumer">
         <Action>Implement Worker Consumer logic.</Action>
         <Details>
-          - Create Celery worker entry point (`workers/app/main.py`).
-          - Define tasks in `workers/app/tasks.py`.
-          - Implement `process_interview` task (stubified for now):
-            - Update job status to PROCESSING.
-            - Simulate delay.
-            - Update job status to COMPLETED.
+          - Create Celery worker entry point (`workers/app/main.py`)
+          - Define tasks in `workers/app/tasks.py`
+          - Implement `process_interview` task (stubbed for now):
+            - Fetch job from database by ID
+            - Update job status to PROCESSING
+            - Simulate delay (placeholder for ML processing)
+            - Update job status to COMPLETED (or FAILED on error)
+          - **Important:** Use same Celery app name as API producer
         </Details>
+        <WorkerStructure>
+          workers/
+          ├── app/
+          │   ├── __init__.py
+          │   ├── main.py           # Celery app instance
+          │   ├── tasks.py          # Task definitions
+          │   └── core/
+          │       ├── __init__.py
+          │       ├── config.py     # Settings (REDIS_URL, DATABASE_URL)
+          │       └── database.py   # DB session factory
+          └── tests/
+              └── test_tasks.py
+        </WorkerStructure>
         <Files>
           <File action="create">workers/app/main.py</File>
           <File action="create">workers/app/tasks.py</File>
@@ -89,14 +119,17 @@
       </Step>
 
       <Step order="5" type="Infrastructure">
-        <Action>Update Docker Compose.</Action>
+        <Action>Update Docker Compose and create Worker Dockerfile.</Action>
         <Details>
-          Add `worker` service definition:
-          - Build context: `../workers`
-          - Environment: REDIS_URL, DATABASE_URL
-          - Command: `celery -A app.main.celery_app worker --loglevel=info`
+          - Create `workers/Dockerfile` for building worker image
+          - Add `worker` service definition to docker-compose.yml:
+            - Build context: `../workers`
+            - Environment: REDIS_URL, DATABASE_URL
+            - Command: `celery -A app.main.celery_app worker --loglevel=info`
+            - Depends on: redis, postgres
         </Details>
         <Files>
+          <File action="create">workers/Dockerfile</File>
           <File action="update">docker/docker-compose.yml</File>
         </Files>
       </Step>
@@ -104,11 +137,14 @@
       <Step order="6" type="Testing">
         <Action>Verify Integration.</Action>
         <Details>
-          - Unit tests for endpoints and worker tasks.
-          - Integration checks to ensure tasks flow from API -> Redis -> Worker.
+          - Unit tests for job service and status endpoint
+          - Unit tests for worker tasks (mocked database)
+          - Integration checks to ensure tasks flow from API -> Redis -> Worker -> Database
         </Details>
         <Files>
           <File action="create">apps/api/tests/unit/services/test_job_service.py</File>
+          <File action="create">apps/api/tests/unit/endpoints/test_jobs.py</File>
+          <File action="create">workers/tests/__init__.py</File>
           <File action="create">workers/tests/test_tasks.py</File>
         </Files>
       </Step>
@@ -117,15 +153,24 @@
     <Verification>
       <Test type="Automated">
         <File>apps/api/tests/unit/services/test_job_service.py</File>
-        <Case>Job creation creates DB record and enqueues task</Case>
+        <Case>Job enqueueing sends task to Celery</Case>
         <Case>Job retrieval returns correct status</Case>
+      </Test>
+      <Test type="Automated">
+        <File>workers/tests/test_tasks.py</File>
+        <Case>process_interview updates job status to PROCESSING</Case>
+        <Case>process_interview updates job status to COMPLETED on success</Case>
+        <Case>process_interview updates job status to FAILED on error</Case>
       </Test>
       <Test type="Manual">
         <Step>Start all services: `docker-compose up --build`</Step>
-        <Step>Send POST request to `/api/v1/jobs` with S3 key</Step>
-        <Step>Verify response contains Job ID and status QUEUED/PENDING</Step>
-        <Step>Check Worker logs for "Received task" and "Task succeeded"</Step>
-        <Step>Poll GET `/api/v1/jobs/{id}` until status is COMPLETED</Step>
+        <Step>Authenticate and get JWT token</Step>
+        <Step>Request presigned URL via `POST /api/v1/uploads/presigned-url`</Step>
+        <Step>Upload file to S3 using presigned URL</Step>
+        <Step>Confirm upload via `POST /api/v1/uploads/{job_id}/confirm`</Step>
+        <Step>Verify response shows job status as QUEUED</Step>
+        <Step>Check Worker logs for "Received task" message</Step>
+        <Step>Poll `GET /api/v1/jobs/{id}` until status is COMPLETED</Step>
         <Step>Verify database record reflects COMPLETED status</Step>
       </Test>
     </Verification>
@@ -133,8 +178,9 @@
     <FutureEnhancements>
       <Item priority="Medium">Implement retry logic for failed tasks</Item>
       <Item priority="Medium">Add Dead Letter Queue (DLQ) for unprocessable jobs</Item>
+      <Item priority="Medium">Task routing for different worker pools (transcription vs analysis)</Item>
       <Item priority="Low">Implement WebSocket notifications for real-time status updates</Item>
-      <Item priority="Low">Add flower for Celery monitoring</Item>
+      <Item priority="Low">Add Flower for Celery monitoring dashboard</Item>
     </FutureEnhancements>
   </Phase>
 </Roadmap>
