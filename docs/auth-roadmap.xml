@@ -9,51 +9,258 @@
       We will also add support for standard email/password authentication (via password hashing)
       to ensure robust testing and a fallback mechanism independent of social providers.
     </Description>
+
+    <CurrentState>
+      <Exists>
+        <Item>User model with `provider` (AuthProvider enum: GITHUB/LINKEDIN), `email`, `credits`</Item>
+        <Item>Database setup with async session support via `get_session()` dependency</Item>
+        <Item>Alembic migrations infrastructure</Item>
+        <Item>FastAPI app with CORS middleware</Item>
+        <Item>Pytest fixtures with transactional rollback</Item>
+      </Exists>
+      <Missing>
+        <Item>`app/api/` directory structure (endpoints, deps, router)</Item>
+        <Item>`app/core/security.py` module</Item>
+        <Item>`app/schemas/` directory for Pydantic models</Item>
+        <Item>JWT and OAuth configuration settings</Item>
+        <Item>Authentication-related tests</Item>
+      </Missing>
+    </CurrentState>
+
     <Strategy>
       <Item priority="High">Use **FastAPI Security** utilities (`OAuth2PasswordBearer`) for standard compliance.</Item>
       <Item priority="High">Implement **JWT (JSON Web Tokens)** for stateless authentication.</Item>
-      <Item priority="Medium">Add **Hashed Password** storage to User model for robustness and dev/test ease.</Item>
       <Item priority="High">Enforce **Dependency Injection** for `get_current_user` to secure endpoints.</Item>
+      <Item priority="Medium">Add **Hashed Password** storage to User model for dev/test and hybrid auth.</Item>
+      <Item priority="Medium">Add **OAuth ID** field to link external provider accounts.</Item>
+      <Item priority="Low">Implement **Refresh Token** strategy for extended sessions (future enhancement).</Item>
     </Strategy>
+
     <Steps>
       <Step order="1" type="Dependencies">
         <Action>Install required packages.</Action>
         <Details>
-          - `python-jose[cryptography]`: Token generation/verification
-          - `passlib[bcrypt]`: Password hashing
-          - `python-multipart`: OAuth2 form parsing
+          - `python-jose[cryptography]`: JWT token generation/verification
+          - `passlib[bcrypt]`: Secure password hashing
+          - `python-multipart`: OAuth2 form data parsing
         </Details>
+        <Command>cd apps/api &amp;&amp; pip install python-jose[cryptography] passlib[bcrypt] python-multipart</Command>
+        <Files>
+          <File action="update">apps/api/requirements.txt</File>
+        </Files>
       </Step>
+
       <Step order="2" type="Configuration">
-        <Action>Update `app/core/config.py`.</Action>
-        <Details>Add `SECRET_KEY`, `ALGORITHM` (HS256), and `ACCESS_TOKEN_EXPIRE_MINUTES`.</Details>
-      </Step>
-      <Step order="3" type="Database">
-        <Action>Update `User` model.</Action>
-        <Details>Add `hashed_password` column (String, nullable) to `apps/api/app/models/user.py`.</Details>
-      </Step>
-      <Step order="4" type="SecurityModule">
-        <Action>Create `app/core/security.py`.</Action>
-        <Details>Implement `get_password_hash`, `verify_password`, and `create_access_token`.</Details>
-      </Step>
-      <Step order="5" type="Endpoints">
-        <Action>Create Auth Endpoints.</Action>
-        <Details>Implement `POST /login/access-token` in `app/api/v1/endpoints/login.py`.</Details>
-      </Step>
-      <Step order="6" type="Protection">
-        <Action>Secure API Routes.</Action>
+        <Action>Update `app/core/config.py` with auth settings.</Action>
         <Details>
-          Create `get_current_user` dependency in `app/api/deps.py`.
-          Apply `Depends(get_current_user)` to sensitive endpoints.
+          Add the following settings:
+          - `SECRET_KEY`: str (loaded from environment, used for JWT signing)
+          - `ALGORITHM`: str = "HS256" (JWT signing algorithm)
+          - `ACCESS_TOKEN_EXPIRE_MINUTES`: int = 30 (token lifetime)
         </Details>
+        <Files>
+          <File action="update">apps/api/app/core/config.py</File>
+          <File action="update">apps/api/.env.example</File>
+        </Files>
+      </Step>
+
+      <Step order="3" type="Database">
+        <Action>Update User model with authentication fields.</Action>
+        <Details>
+          Add the following columns to User model:
+          - `hashed_password`: Optional[str] (nullable, for email/password auth)
+          - `oauth_id`: Optional[str] (nullable, provider's unique user ID)
+
+          Note: Both fields are nullable to support hybrid auth:
+          - OAuth users: `oauth_id` + `provider` set, `hashed_password` null
+          - Local users: `hashed_password` set, `oauth_id` null, `provider` = LOCAL
+
+          Consider adding `AuthProvider.LOCAL` to enums.py for local auth users.
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/models/user.py</File>
+          <File action="update">apps/api/app/models/enums.py</File>
+        </Files>
+      </Step>
+
+      <Step order="4" type="Migration">
+        <Action>Create and apply database migration.</Action>
+        <Details>
+          Generate Alembic migration for new User model fields.
+        </Details>
+        <Command>cd apps/api &amp;&amp; alembic revision --autogenerate -m "add_auth_fields" &amp;&amp; alembic upgrade head</Command>
+        <Files>
+          <File action="create">apps/api/alembic/versions/XXX_add_auth_fields.py</File>
+        </Files>
+      </Step>
+
+      <Step order="5" type="APIStructure">
+        <Action>Create API directory structure.</Action>
+        <Details>
+          Create the versioned API structure that doesn't exist yet:
+          - `app/api/__init__.py`
+          - `app/api/v1/__init__.py`
+          - `app/api/v1/router.py` (aggregates all v1 endpoints)
+          - `app/api/v1/endpoints/__init__.py`
+        </Details>
+        <Files>
+          <File action="create">apps/api/app/api/__init__.py</File>
+          <File action="create">apps/api/app/api/v1/__init__.py</File>
+          <File action="create">apps/api/app/api/v1/router.py</File>
+          <File action="create">apps/api/app/api/v1/endpoints/__init__.py</File>
+        </Files>
+      </Step>
+
+      <Step order="6" type="Schemas">
+        <Action>Create Pydantic schemas for auth.</Action>
+        <Details>
+          Create request/response models:
+          - `TokenResponse`: access_token, token_type, expires_in
+          - `TokenPayload`: sub (user_id), exp (expiration)
+          - `UserRead`: id, email, provider, credits, created_at (safe representation)
+          - `UserCreate`: email, password (for local registration)
+        </Details>
+        <Files>
+          <File action="create">apps/api/app/schemas/__init__.py</File>
+          <File action="create">apps/api/app/schemas/token.py</File>
+          <File action="create">apps/api/app/schemas/user.py</File>
+        </Files>
+      </Step>
+
+      <Step order="7" type="SecurityModule">
+        <Action>Create `app/core/security.py`.</Action>
+        <Details>
+          Implement core security utilities:
+          - `get_password_hash(password: str) -> str`: Hash password with bcrypt
+          - `verify_password(plain: str, hashed: str) -> bool`: Verify password
+          - `create_access_token(subject: str, expires_delta: timedelta | None) -> str`: Generate JWT
+          - `decode_access_token(token: str) -> TokenPayload`: Validate and decode JWT
+        </Details>
+        <Files>
+          <File action="create">apps/api/app/core/security.py</File>
+        </Files>
+      </Step>
+
+      <Step order="8" type="Dependencies">
+        <Action>Create `app/api/deps.py` with auth dependencies.</Action>
+        <Details>
+          Implement FastAPI dependencies:
+          - `oauth2_scheme`: OAuth2PasswordBearer instance
+          - `get_current_user(token, session) -> User`: Extract and validate user from JWT
+          - `get_current_active_user(user) -> User`: Ensure user is active (optional)
+        </Details>
+        <Files>
+          <File action="create">apps/api/app/api/deps.py</File>
+        </Files>
+      </Step>
+
+      <Step order="9" type="Endpoints">
+        <Action>Create auth endpoints.</Action>
+        <Details>
+          Implement in `app/api/v1/endpoints/login.py`:
+          - `POST /login/access-token`: OAuth2 password flow login
+            - Accepts: OAuth2PasswordRequestForm (username=email, password)
+            - Returns: TokenResponse
+            - Validates credentials, returns JWT
+
+          Optional endpoints for future:
+          - `POST /register`: Create local user account
+          - `POST /refresh`: Refresh access token
+          - `POST /logout`: Invalidate token (if using token blacklist)
+        </Details>
+        <Files>
+          <File action="create">apps/api/app/api/v1/endpoints/login.py</File>
+        </Files>
+      </Step>
+
+      <Step order="10" type="Integration">
+        <Action>Register auth router in main app.</Action>
+        <Details>
+          - Import v1 router in `app/main.py`
+          - Include router with `/api/v1` prefix
+          - Verify Swagger UI shows auth endpoints
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/main.py</File>
+          <File action="update">apps/api/app/api/v1/router.py</File>
+        </Files>
+      </Step>
+
+      <Step order="11" type="Protection">
+        <Action>Secure API routes with authentication.</Action>
+        <Details>
+          Apply `Depends(get_current_user)` to sensitive endpoints:
+          - Interview analysis endpoints
+          - User profile endpoints
+          - Any data-modifying operations
+
+          Leave public:
+          - Health check (`/health`)
+          - Login endpoint (`/login/access-token`)
+          - API documentation (`/docs`, `/redoc`)
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/api/v1/endpoints/*.py</File>
+        </Files>
+      </Step>
+
+      <Step order="12" type="Testing">
+        <Action>Create authentication tests.</Action>
+        <Details>
+          Unit tests (`tests/unit/core/test_security.py`):
+          - Test password hashing and verification
+          - Test JWT creation and decoding
+          - Test token expiration handling
+
+          Integration tests (`tests/integration/test_auth.py`):
+          - Test login with valid credentials returns token
+          - Test login with invalid credentials returns 401
+          - Test protected route without token returns 401
+          - Test protected route with valid token succeeds
+          - Test protected route with expired token returns 401
+        </Details>
+        <Files>
+          <File action="create">apps/api/tests/unit/core/test_security.py</File>
+          <File action="create">apps/api/tests/integration/test_auth.py</File>
+        </Files>
       </Step>
     </Steps>
+
     <Verification>
-      <Test type="Automated">Create integration test `tests/integration/test_auth.py`.</Test>
-      <Case>Verify token generation with valid credentials.</Case>
-      <Case>Verify 401 response for invalid credentials.</Case>
-      <Case>Verify 401 response for accessing protected route without token.</Case>
-      <Test type="Manual">Swagger UI (`/docs`) verification using the "Authorize" button.</Test>
+      <Test type="Automated">
+        <File>tests/unit/core/test_security.py</File>
+        <Case>Password hashing produces valid bcrypt hash</Case>
+        <Case>Password verification succeeds with correct password</Case>
+        <Case>Password verification fails with incorrect password</Case>
+        <Case>JWT contains correct claims (sub, exp)</Case>
+        <Case>Expired JWT raises appropriate error</Case>
+      </Test>
+      <Test type="Automated">
+        <File>tests/integration/test_auth.py</File>
+        <Case>POST /login/access-token with valid credentials returns 200 + token</Case>
+        <Case>POST /login/access-token with invalid email returns 401</Case>
+        <Case>POST /login/access-token with invalid password returns 401</Case>
+        <Case>GET /protected-route without Authorization header returns 401</Case>
+        <Case>GET /protected-route with valid Bearer token returns 200</Case>
+        <Case>GET /protected-route with malformed token returns 401</Case>
+      </Test>
+      <Test type="Manual">
+        <Step>Start dev server: `uvicorn app.main:app --reload`</Step>
+        <Step>Open Swagger UI at `/docs`</Step>
+        <Step>Click "Authorize" button</Step>
+        <Step>Enter test credentials</Step>
+        <Step>Verify token is obtained and stored</Step>
+        <Step>Test protected endpoint returns data</Step>
+        <Step>Clear authorization, verify protected endpoint returns 401</Step>
+      </Test>
     </Verification>
+
+    <FutureEnhancements>
+      <Item priority="Medium">Refresh token rotation for extended sessions</Item>
+      <Item priority="Medium">Token blacklist/revocation for logout</Item>
+      <Item priority="Low">Rate limiting on login endpoint</Item>
+      <Item priority="Low">Account lockout after failed attempts</Item>
+      <Item priority="Low">Password reset flow via email</Item>
+    </FutureEnhancements>
   </Phase>
 </Roadmap>

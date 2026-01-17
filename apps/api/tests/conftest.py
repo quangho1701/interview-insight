@@ -14,6 +14,9 @@ os.environ.setdefault("DATABASE_PASSWORD", "postgres")
 os.environ.setdefault("DATABASE_NAME", "vibecheck_test")
 os.environ.setdefault("REDIS_HOST", "localhost")
 os.environ.setdefault("REDIS_PORT", "6380")  # Test Redis port
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
+
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(scope="session")
@@ -52,3 +55,20 @@ def db_session(test_engine, setup_database) -> Generator[Session, None, None]:
         yield session
         # Rollback any uncommitted changes
         session.rollback()
+
+
+@pytest.fixture
+def client(test_engine, setup_database) -> Generator[TestClient, None, None]:
+    """Provide a test client with database session override."""
+    from app.core.database import get_session
+    from app.main import app
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(test_engine) as session:
+            yield session
+            session.rollback()
+
+    app.dependency_overrides[get_session] = get_test_session
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()

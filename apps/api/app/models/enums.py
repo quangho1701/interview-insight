@@ -4,8 +4,9 @@ from enum import Enum
 
 
 class AuthProvider(str, Enum):
-    """OAuth authentication provider types."""
+    """Authentication provider types."""
 
+    LOCAL = "local"
     GITHUB = "github"
     LINKEDIN = "linkedin"
 

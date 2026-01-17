@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.router import api_router
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -11,8 +12,8 @@ app = FastAPI(
     title="VibeCheck API",
     description="AI-powered interview analysis platform",
     version="0.1.0",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # CORS middleware
@@ -37,5 +38,9 @@ def root():
     return {
         "name": "VibeCheck API",
         "version": "0.1.0",
-        "docs": "/docs" if settings.debug else None,
+        "docs": "/docs",
     }
+
+
+# Include API v1 router
+app.include_router(api_router, prefix="/api/v1")

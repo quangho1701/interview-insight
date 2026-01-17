@@ -17,6 +17,8 @@ class User(SQLModel, table=True):
     id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True)
     provider: AuthProvider = Field(index=True)
     email: str = Field(index=True, unique=True)
+    hashed_password: Optional[str] = Field(default=None)
+    oauth_id: Optional[str] = Field(default=None, index=True)
     credits: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

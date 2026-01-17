@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     api_port: int = 8000
     debug: bool = False
 
+    # Authentication settings
+    secret_key: str = "CHANGE-THIS-IN-PRODUCTION"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+
     @property
     def database_url(self) -> str:
         """Construct PostgreSQL database URL."""
