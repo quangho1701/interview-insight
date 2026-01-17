@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Roadmap>
+  <Phase name="Authentication & Security">
+    <Goal>Secure the VibeCheck API with OAuth2/JWT and email/password fallback.</Goal>
+    <Description>
+      Phase 2 focuses on transitioning the API from an open state to a secured state.
+      We will implement industry-standard OAuth2 with Password Flow using JWTs (JSON Web Tokens).
+      This ensures stateless authentication suitable for our scalable backend.
+      We will also add support for standard email/password authentication (via password hashing)
+      to ensure robust testing and a fallback mechanism independent of social providers.
+    </Description>
+    <Strategy>
+      <Item priority="High">Use **FastAPI Security** utilities (`OAuth2PasswordBearer`) for standard compliance.</Item>
+      <Item priority="High">Implement **JWT (JSON Web Tokens)** for stateless authentication.</Item>
+      <Item priority="Medium">Add **Hashed Password** storage to User model for robustness and dev/test ease.</Item>
+      <Item priority="High">Enforce **Dependency Injection** for `get_current_user` to secure endpoints.</Item>
+    </Strategy>
+    <Steps>
+      <Step order="1" type="Dependencies">
+        <Action>Install required packages.</Action>
+        <Details>
+          - `python-jose[cryptography]`: Token generation/verification
+          - `passlib[bcrypt]`: Password hashing
+          - `python-multipart`: OAuth2 form parsing
+        </Details>
+      </Step>
+      <Step order="2" type="Configuration">
+        <Action>Update `app/core/config.py`.</Action>
+        <Details>Add `SECRET_KEY`, `ALGORITHM` (HS256), and `ACCESS_TOKEN_EXPIRE_MINUTES`.</Details>
+      </Step>
+      <Step order="3" type="Database">
+        <Action>Update `User` model.</Action>
+        <Details>Add `hashed_password` column (String, nullable) to `apps/api/app/models/user.py`.</Details>
+      </Step>
+      <Step order="4" type="SecurityModule">
+        <Action>Create `app/core/security.py`.</Action>
+        <Details>Implement `get_password_hash`, `verify_password`, and `create_access_token`.</Details>
+      </Step>
+      <Step order="5" type="Endpoints">
+        <Action>Create Auth Endpoints.</Action>
+        <Details>Implement `POST /login/access-token` in `app/api/v1/endpoints/login.py`.</Details>
+      </Step>
+      <Step order="6" type="Protection">
+        <Action>Secure API Routes.</Action>
+        <Details>
+          Create `get_current_user` dependency in `app/api/deps.py`.
+          Apply `Depends(get_current_user)` to sensitive endpoints.
+        </Details>
+      </Step>
+    </Steps>
+    <Verification>
+      <Test type="Automated">Create integration test `tests/integration/test_auth.py`.</Test>
+      <Case>Verify token generation with valid credentials.</Case>
+      <Case>Verify 401 response for invalid credentials.</Case>
+      <Case>Verify 401 response for accessing protected route without token.</Case>
+      <Test type="Manual">Swagger UI (`/docs`) verification using the "Authorize" button.</Test>
+    </Verification>
+  </Phase>
+</Roadmap>
