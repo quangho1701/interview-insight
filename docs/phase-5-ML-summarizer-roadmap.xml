@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Roadmap>
+  <Phase name="ML Summarization Pipeline">
+    <Goal>Implement a state-of-the-art transcription and summarization pipeline using local LLMs on the GPU worker.</Goal>
+    <Description>
+      Phase 5 transforms the "stubbed" worker from Phase 4 into a real ML powerhouse.
+      We will integrate `faster-whisper` for high-performance transcription and `Meta Llama 3.3 8B` for intelligent meeting summarization.
+      The focus is on privacy (local processing), speed (GPU acceleration), and structured data extraction.
+    </Description>
+
+    <CurrentState>
+      <Exists>
+        <Item>Celery Worker infrastructure (Phase 4)</Item>
+        <Item>S3 File retrieval logic</Item>
+        <Item>Database models for `InterviewAnalysis`</Item>
+        <Item>Stubbed `process_interview` task</Item>
+      </Exists>
+      <Missing>
+        <Item>ML Dependencies (torch, faster-whisper, transformers, bitsandbytes)</Item>
+        <Item>Transcription Service Logic</Item>
+        <Item>Summarization Service Logic</Item>
+        <Item>System Prompts for structured data extraction</Item>
+        <Item>GPU retrieval/loading mechanism</Item>
+      </Missing>
+    </CurrentState>
+
+    <Strategy>
+      <Item priority="High">Install **MKL dependencies** and **ffmpeg** in Worker Docker.</Item>
+      <Item priority="High">Implement **`TranscriptionService`** using `faster-whisper` (Large-v3).</Item>
+      <Item priority="High">Implement **`SummarizationService`** using `Llama 3.3 8B Instruct` (4-bit quantized).</Item>
+      <Item priority="High">Connect services to the **Celery Task** flow.</Item>
+      <Item priority="Medium">Ensure **GPU Memory Safety** (avoid OOM when loading both models).</Item>
+    </Strategy>
+
+    <Steps>
+      <Step order="1" type="Dependencies">
+        <Action>Update Worker Environment.</Action>
+        <Details>
+          - Add `ffmpeg` to `workers/Dockerfile`.
+          - Add Python ML libraries to `workers/pyproject.toml`:
+            - `faster-whisper`
+            - `torch` (CUDA 12.1+)
+            - `transformers`
+            - `accelerate`
+            - `bitsandbytes` (for quantization)
+        </Details>
+        <Files>
+          <File action="update">workers/Dockerfile</File>
+          <File action="update">workers/pyproject.toml</File>
+        </Files>
+      </Step>
+
+      <Step order="2" type="ML_Services">
+        <Action>Create Transcription Service.</Action>
+        <Details>
+          - create `workers/app/services/transcription.py`
+          - Initialize `WhisperModel` (use `large-v3` or `distil-large-v3`)
+          - Implement `transcribe(audio_path)` returning text main segments.
+        </Details>
+        <Files>
+          <File action="create">workers/app/services/transcription.py</File>
+        </Files>
+      </Step>
+
+      <Step order="3" type="ML_Services">
+        <Action>Create Summarization Service.</Action>
+        <Details>
+          - create `workers/app/services/summarization.py`
+          - Initialize Llama 3 pipeline with 4-bit config.
+          - create `PROMPT_TEMPLATE` for structured JSON output.
+          - Implement `summarize(transcript_text)` -> JSON dict.
+        </Details>
+        <Files>
+          <File action="create">workers/app/services/summarization.py</File>
+        </Files>
+      </Step>
+
+      <Step order="4" type="Integration">
+        <Action>Connect ML Services to Celery Task.</Action>
+        <Details>
+          - Update `workers/app/tasks.py`.
+          - In `process_interview`:
+            1. Download file.
+            2. `transcription_service.transcribe(file)`.
+            3. `summarization_service.summarize(text)`.
+            4. Save JSON to DB.
+            5. Cleanup file.
+        </Details>
+        <Files>
+          <File action="update">workers/app/tasks.py</File>
+        </Files>
+      </Step>
+
+      <Step order="5" type="Testing">
+        <Action>Verify Pipeline.</Action>
+        <Details>
+          - Unit tests for service classes (mocking the heavy models).
+          - Test prompt engineering on sample text.
+        </Details>
+        <Files>
+          <File action="create">workers/tests/test_ml_services.py</File>
+        </Files>
+      </Step>
+    </Steps>
+
+    <Verification>
+      <Test type="Automated">
+        <File>workers/tests/test_ml_services.py</File>
+        <Case>Transcription service mocking returns expected segments</Case>
+        <Case>Summarization service extracts JSON keys correctly</Case>
+      </Test>
+      <Test type="Manual">
+        <Step>Deploy worker with GPU support.</Step>
+        <Step>Upload a real audio file (e.g., 2 min interview clip).</Step>
+        <Step>Watch logs for model loading and inference progress.</Step>
+        <Step>Verify Database has rich JSON content (Summary, Sentiment, Topics).</Step>
+      </Test>
+    </Verification>
+
+    <FutureEnhancements>
+      <Item priority="Medium">Batch processing for multiple uploads.</Item>
+      <Item priority="Low">Speaker identification (Diarization) using pyannote.audio (Phase 6).</Item>
+      <Item priority="Low">Fine-tuning Llama on domain-specific interview data.</Item>
+    </FutureEnhancements>
+  </Phase>
+</Roadmap>
