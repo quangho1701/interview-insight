@@ -27,7 +27,7 @@ export default function UploadPage() {
         const fetchInterviewers = async () => {
             try {
                 const { data } = await api.get("/interviewers");
-                setInterviewers(data);
+                setInterviewers(data.items);
             } catch (error) {
                 console.error("Failed to fetch interviewers", error);
             }

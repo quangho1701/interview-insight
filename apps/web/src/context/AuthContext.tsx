@@ -24,16 +24,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const initAuth = async () => {
             const token = localStorage.getItem("token");
+
+            // Dev mode: auto-fetch guest token if no token exists
+            if (!token && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true") {
+                try {
+                    const { data } = await api.get("/dev-token");
+                    if (data.access_token) {
+                        localStorage.setItem("token", data.access_token);
+                        setIsAuthenticated(true);
+                        setIsLoading(false);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn("Dev auth bypass failed:", error);
+                }
+            }
+
             if (token) {
                 setIsAuthenticated(true);
-                // Optional: Fetch user details here if needed
-                // try {
-                //   const { data } = await api.get("/users/me");
-                //   setUser(data);
-                // } catch (error) {
-                //   console.error("Failed to fetch user", error);
-                //   logout();
-                // }
             }
             setIsLoading(false);
         };

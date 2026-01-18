@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, get_or_create_guest_user
+from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.security import create_access_token, verify_password
 from app.models.user import User
@@ -77,3 +78,28 @@ def get_current_user_info(current_user: CurrentUser) -> User:
         User information.
     """
     return current_user
+
+
+@router.get("/dev-token", response_model=Token)
+def get_dev_token(session: Annotated[Session, Depends(get_session)]) -> Token:
+    """Get a dev token for the guest user (only available in dev mode).
+
+    Args:
+        session: Database session.
+
+    Returns:
+        Token with access_token for guest user.
+
+    Raises:
+        HTTPException: 404 if dev mode is not enabled.
+    """
+    settings = get_settings()
+    if not settings.dev_auth_bypass:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        )
+
+    guest_user = get_or_create_guest_user(session)
+    access_token = create_access_token(subject=str(guest_user.id))
+    return Token(access_token=access_token)

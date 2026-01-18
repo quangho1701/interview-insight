@@ -4,6 +4,10 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Guest user constants (used when DEV_AUTH_BYPASS=true)
+GUEST_USER_ID = "00000000-0000-0000-0000-000000000000"
+GUEST_USER_EMAIL = "guest@vibecheck.dev"
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -40,6 +44,9 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"
     s3_bucket_name: str = ""
+
+    # Development settings
+    dev_auth_bypass: bool = False
 
     @property
     def database_url(self) -> str:

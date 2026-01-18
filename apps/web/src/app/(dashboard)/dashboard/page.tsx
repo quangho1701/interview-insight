@@ -22,7 +22,7 @@ export default function DashboardPage() {
         const fetchJobs = async () => {
             try {
                 const { data } = await api.get("/jobs");
-                setJobs(data);
+                setJobs(data.items);
             } catch (error) {
                 console.error("Failed to fetch jobs", error);
             } finally {

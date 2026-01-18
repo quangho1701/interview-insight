@@ -13,7 +13,7 @@ class InterviewerCreate(BaseModel):
     """Request schema for creating an interviewer."""
 
     name: str = Field(..., min_length=1, max_length=255)
-    company: str = Field(..., min_length=1, max_length=255)
+    company: Optional[str] = Field(default=None, max_length=255)
     email: Optional[EmailStr] = None
 
 
@@ -22,7 +22,7 @@ class InterviewerRead(BaseModel):
 
     id: UUID
     name: str
-    company: str
+    company: Optional[str] = None
     email: Optional[str] = None
     profile_status: ProfileStatus
     created_at: datetime

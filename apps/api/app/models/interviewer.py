@@ -18,7 +18,7 @@ class Interviewer(SQLModel, table=True):
     user_id: UUID = Field(foreign_key="users.id", index=True)
     name: str = Field(index=True)
     email: Optional[str] = Field(default=None)
-    company: str = Field(index=True)
+    company: Optional[str] = Field(default=None, index=True)
     profile_status: ProfileStatus = Field(default=ProfileStatus.HIDDEN)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
