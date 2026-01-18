@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Roadmap>
+  <Phase name="Shared UI Components & Design System" status="completed">
+    <CompletedDate>2026-01-18</CompletedDate>
+    <Goal>Establish a robust, shared UI component library (packages/ui) with the "Professional Futurism" aesthetic.</Goal>
+    <Description>
+      Phase 6 focuses on building the foundational design system for VibeCheck.
+      We will implement a shared React component library using Tailwind CSS and Radix UI.
+      The design capability features a "Glassmorphism" look with a specific Green (#19D95E) accent color against a dark background.
+    </Description>
+
+    <CurrentState>
+      <Exists>
+        <Item>Monorepo structure (Turborepo)</Item>
+        <Item>UI Infrastructure (package.json, tsconfig.json)</Item>
+        <Item>Tailwind CSS Configuration with Design Tokens</Item>
+        <Item>Core Components (Button, Card, Input)</Item>
+        <Item>Storybook for Visual Testing</Item>
+      </Exists>
+      <Missing />
+    </CurrentState>
+
+    <Strategy>
+      <Item priority="High">Initialize `packages/ui` as a **React/TypeScript** library.</Item>
+      <Item priority="High">Configure **Tailwind CSS** with the custom Green (#19D95E) and Dark Mode tokens.</Item>
+      <Item priority="Medium">Implement **Core Components** (Button, Card, Input) using Radix UI primitives where applicable.</Item>
+      <Item priority="Medium">Setup **Storybook** for isolated component development and verification.</Item>
+    </Strategy>
+
+    <Steps>
+      <Step order="1" type="Infrastructure">
+        <Action>Initialize UI Package.</Action>
+        <Details>
+          - Create `packages/ui/package.json` with React, Tailwind, and Storybook deps.
+          - Create `packages/ui/tsconfig.json`.
+        </Details>
+        <Files>
+          <File action="create">packages/ui/package.json</File>
+          <File action="create">packages/ui/tsconfig.json</File>
+        </Files>
+      </Step>
+
+      <Step order="2" type="Configuration">
+        <Action>Configure Design System Tokens.</Action>
+        <Details>
+          - Create `packages/ui/tailwind.config.ts`.
+          - Define `colors`: `vibe-green` (#19D95E), `vibe-black` (#0a0a0a).
+          - Define `animations`: `aura` glow effects.
+          - Create `packages/ui/src/lib/utils.ts` for class merging (`cn`).
+        </Details>
+        <Files>
+          <File action="create">packages/ui/tailwind.config.ts</File>
+          <File action="create">packages/ui/src/lib/utils.ts</File>
+        </Files>
+      </Step>
+
+      <Step order="3" type="Components">
+        <Action>Implement Core Components.</Action>
+        <Details>
+          - **Button:** Variants for `default` (Green Glow), `outline`, `glass`.
+          - **Card:** Glassmorphism style with backdrop blur.
+          - **Input:** Custom focus ring with `vibe-green`.
+          - Export all from `src/index.ts`.
+        </Details>
+        <Files>
+          <File action="create">packages/ui/src/components/button.tsx</File>
+          <File action="create">packages/ui/src/components/card.tsx</File>
+          <File action="create">packages/ui/src/components/input.tsx</File>
+          <File action="create">packages/ui/src/index.ts</File>
+        </Files>
+      </Step>
+
+      <Step order="4" type="Verification">
+        <Action>Setup Storybook.</Action>
+        <Details>
+          - Configure `.storybook/main.ts` and `preview.ts`.
+          - Create stories for Button, Card, and Input.
+          - Verify visual regression manually.
+        </Details>
+        <Files>
+          <File action="create">packages/ui/.storybook/main.ts</File>
+          <File action="create">packages/ui/src/components/button.stories.tsx</File>
+        </Files>
+      </Step>
+    </Steps>
+
+    <Verification status="passed">
+      <Test type="Automated">
+        <File>packages/ui/.storybook/main.ts</File>
+        <Case status="passed">Storybook builds successfully</Case>
+        <Case status="passed">Components render without runtime errors</Case>
+      </Test>
+      <Test type="Manual">
+        <Step status="passed">Run `pnpm run storybook` in `packages/ui`.</Step>
+        <Step>Open `http://localhost:6006`.</Step>
+        <Step>Navigate to **Button > Default** and verify Green (#19D95E) glow.</Step>
+        <Step>Navigate to **Card > Default** and verify glassmorphism effect.</Step>
+      </Test>
+      <VerificationNotes>
+        <Note date="2026-01-18">pnpm install completed successfully - all dependencies linked</Note>
+        <Note date="2026-01-18">Storybook 7.6.21 started successfully on http://localhost:6006</Note>
+        <Note date="2026-01-18">CSS imports verified in .storybook/preview.ts (imports ../src/index.css)</Note>
+        <Note date="2026-01-18">Tailwind directives and CSS custom properties configured in src/index.css</Note>
+      </VerificationNotes>
+    </Verification>
+
+    <FutureEnhancements>
+      <Item priority="Medium">Add more atomic components (Badge, Avatar, Tooltip).</Item>
+      <Item priority="Low">Implement dark/light mode toggle (initially dark mode only).</Item>
+    </FutureEnhancements>
+  </Phase>
+</Roadmap>
