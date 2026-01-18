@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Roadmap>
+  <Phase name="Application Assembly (Next.js App Router)" status="planned">
+    <CompletedDate></CompletedDate>
+    <Goal>Assemble the "VibeCheck" frontend application using Next.js 14+ (App Router), integrating the existing FastAPI backend and @vibecheck/ui component library with "Void Black" aesthetic.</Goal>
+    <Description>
+      Phase 7 involves the core assembly of the frontend application.
+      We will initialize a Next.js app, integrate the UI library, establish state management with Zustand, and connect to the FastAPI backend.
+      Strict adherence to disk space constraints and the "Void Black" (#0a0a0a) aesthetic is required.
+    </Description>
+
+    <CurrentState>
+      <Exists>
+        <Item>Backend API (FastAPI) [Operational]</Item>
+        <Item>UI Library (@vibecheck/ui) [Storybook Ready]</Item>
+        <Item>Apps/Web Scaffold [Empty]</Item>
+      </Exists>
+      <Missing>
+        <Item>Next.js Application Code</Item>
+        <Item>State Management</Item>
+        <Item>API Integration Layer</Item>
+        <Item>Application Pages (Login, Dashboard, Upload, Analysis)</Item>
+        <Item>Backend: Interviewer CRUD endpoints</Item>
+        <Item>Backend: Analysis retrieval endpoint</Item>
+        <Item>Backend: Jobs list endpoint</Item>
+      </Missing>
+    </CurrentState>
+
+    <Strategy>
+      <Item priority="High">Initialize `apps/web` with **Next.js 14 App Router** (clean slate).</Item>
+      <Item priority="Critical">Enforce **Void Black** (#0a0a0a) aesthetic via global CSS and Tailwind.</Item>
+      <Item priority="High">Implement **State Management** using efficient, lightweight `zustand` stores.</Item>
+      <Item priority="High">Create a typed **API Client** for seamless FastAPI communication.</Item>
+      <Item priority="High">Add missing backend endpoints in parallel with frontend development.</Item>
+    </Strategy>
+
+    <Steps>
+      <Step order="1" type="Initialization">
+        <Action>Initialize Next.js App.</Action>
+        <Details>
+          - Initialize `apps/web` using `pnpm create next-app`.
+          - Configure Tailwind to consume `packages/ui` tokens.
+          - Apply Global CSS reset for Void Black theme.
+          - Configure `next.config.js` with `transpilePackages` for @vibecheck/ui.
+          - Add environment configuration for API URL.
+        </Details>
+        <Files>
+          <File action="create">apps/web/package.json</File>
+          <File action="create">apps/web/next.config.js</File>
+          <File action="create">apps/web/tailwind.config.ts</File>
+          <File action="create">apps/web/postcss.config.js</File>
+          <File action="create">apps/web/src/app/globals.css</File>
+          <File action="create">apps/web/.env.local</File>
+        </Files>
+      </Step>
+
+      <Step order="2" type="Architecture">
+        <Action>Setup Core Architecture.</Action>
+        <Details>
+          - Create `lib/api.ts` (Fetch wrapper, auth middleware).
+            NOTE: Login endpoint `/login/access-token` requires FormData, not JSON.
+          - Create `lib/store.ts` (Zustand stores for Auth, Jobs, Interviewers).
+          - Create `lib/types.ts` (TypeScript interfaces mirroring backend schemas).
+          - Create `middleware.ts` (Next.js auth protection for routes).
+        </Details>
+        <Files>
+          <File action="create">apps/web/src/lib/api.ts</File>
+          <File action="create">apps/web/src/lib/store.ts</File>
+          <File action="create">apps/web/src/lib/types.ts</File>
+          <File action="create">apps/web/src/middleware.ts</File>
+        </Files>
+      </Step>
+
+      <Step order="3" type="Pages">
+        <Action>Implement Application Pages.</Action>
+        <Details>
+          - **Login:** `/login` (Auth form, API integration).
+          - **Dashboard:** `/dashboard` (List of interviews - requires GET /api/v1/jobs).
+          - **Upload:** `/upload` (File upload flow - requires interviewer selection).
+          - **Analysis:** `/analysis/[id]` (Details view - requires GET /api/v1/analysis/{job_id}).
+          - Create route group layouts for (auth) and (dashboard).
+        </Details>
+        <Files>
+          <File action="create">apps/web/src/app/layout.tsx</File>
+          <File action="create">apps/web/src/app/(auth)/layout.tsx</File>
+          <File action="create">apps/web/src/app/(auth)/login/page.tsx</File>
+          <File action="create">apps/web/src/app/(dashboard)/layout.tsx</File>
+          <File action="create">apps/web/src/app/(dashboard)/dashboard/page.tsx</File>
+          <File action="create">apps/web/src/app/(dashboard)/upload/page.tsx</File>
+          <File action="create">apps/web/src/app/(dashboard)/analysis/[id]/page.tsx</File>
+        </Files>
+      </Step>
+
+      <Step order="4" type="Integration">
+        <Action>UI Integration.</Action>
+        <Details>
+          - Import components from `@vibecheck/ui` (Button, Card, Input).
+          - Build app-specific layouts (Sidebar, Header).
+          - Ensure Void Black (#0a0a0a) background throughout.
+        </Details>
+        <Files>
+          <File action="update">apps/web/src/app/layout.tsx</File>
+          <File action="create">apps/web/src/components/sidebar.tsx</File>
+          <File action="create">apps/web/src/components/header.tsx</File>
+        </Files>
+      </Step>
+    </Steps>
+
+    <BackendDependencies>
+      <Endpoint priority="Critical">
+        <Method>POST</Method>
+        <Path>/api/v1/interviewers</Path>
+        <Purpose>Create interviewer (required for upload confirmation)</Purpose>
+        <File action="create">apps/api/app/api/v1/endpoints/interviewers.py</File>
+        <File action="create">apps/api/app/schemas/interviewer.py</File>
+      </Endpoint>
+      <Endpoint priority="Critical">
+        <Method>GET</Method>
+        <Path>/api/v1/interviewers</Path>
+        <Purpose>List user's interviewers for selection during upload</Purpose>
+      </Endpoint>
+      <Endpoint priority="Critical">
+        <Method>GET</Method>
+        <Path>/api/v1/interviewers/{id}</Path>
+        <Purpose>Get single interviewer details</Purpose>
+      </Endpoint>
+      <Endpoint priority="High">
+        <Method>GET</Method>
+        <Path>/api/v1/analysis/{job_id}</Path>
+        <Purpose>Retrieve analysis results for completed job</Purpose>
+        <File action="create">apps/api/app/api/v1/endpoints/analysis.py</File>
+      </Endpoint>
+      <Endpoint priority="High">
+        <Method>GET</Method>
+        <Path>/api/v1/jobs</Path>
+        <Purpose>List all jobs for current user (dashboard)</Purpose>
+        <File action="update">apps/api/app/api/v1/endpoints/jobs.py</File>
+      </Endpoint>
+    </BackendDependencies>
+
+    <Verification status="planned">
+      <Test type="Automated">
+        <File>apps/web/vitest.config.ts</File>
+        <Case>Unit tests for `store.ts` (Auth/Job logic)</Case>
+        <Case>Unit tests for `api.ts` (Mock fetch)</Case>
+      </Test>
+      <Test type="Manual">
+        <Step>Start backend (`apps/api`) and frontend (`apps/web`).</Step>
+        <Step>Login flow (Token storage, Redirection).</Step>
+        <Step>Create interviewer flow.</Step>
+        <Step>Upload flow (Presigned URL -> S3 -> Confirmation).</Step>
+        <Step>Poll job status until completed.</Step>
+        <Step>View analysis results.</Step>
+        <Step>Verify "Void Black" aesthetic on all screens.</Step>
+      </Test>
+    </Verification>
+  </Phase>
+</Roadmap>
