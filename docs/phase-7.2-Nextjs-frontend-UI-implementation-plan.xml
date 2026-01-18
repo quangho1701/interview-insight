@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_plan phase="7.2" title="Next.js App Implementation">
+    <goal>Implement the user-facing web application using Next.js 14 App Router, integrated with the existing FastAPI backend and shared UI library.</goal>
+    
+    <user_review_required>
+        <item type="IMPORTANT" title="Empty Web App Scope">
+            apps/web appears to be a minimal scaffold. This plan assumes we will fully populate it with a fresh Next.js App Router structure.
+        </item>
+        <item type="IMPORTANT" title="Auth Strategy">
+            We assume standard JWT Bearer token flow from the login endpoint, stored in localStorage (or cookies via manageable client-side helper) for simplicity in this phase, unless HttpOnly cookies are strictly enforced by the backend already.
+        </item>
+    </user_review_required>
+
+    <proposed_changes>
+        <section name="Bootstrapping &amp; Configuration" path="apps/web/">
+            <step>
+                <action>Initialize Next.js</action>
+                <details>Ensure next.config.js, tailwind.config.ts, postcss.config.js are correctly set up to consume packages/ui.</details>
+            </step>
+            <step>
+                <action>Environment Setup</action>
+                <details>Create .env.local template with NEXT_PUBLIC_API_URL.</details>
+            </step>
+            <step>
+                <action>Install Dependencies</action>
+                <details>Add axios (or native fetch), @tanstack/react-query, lucide-react, framer-motion.</details>
+            </step>
+        </section>
+
+        <section name="Core Architecture" path="apps/web/src/">
+            <component name="API Client" file="lib/api-client.ts" type="NEW">
+                <details>Create centralized API client. Add interceptors for Authorization header and 401 response handling.</details>
+            </component>
+            <component name="Auth Context" file="context/AuthContext.tsx" type="NEW">
+                <details>React Context for user state. Implement login, logout, register methods. Handle token persistence.</details>
+            </component>
+            <component name="Root Layout" file="app/layout.tsx" type="NEW">
+                <details>Apply Inter font. Wrap with Providers (Auth, Theme, Toast). Apply global styles.</details>
+            </component>
+        </section>
+
+        <section name="Feature Implementation">
+            <feature name="Authentication">
+                <page path="app/(auth)/login/page.tsx">Form: Email/Password. Action: Call login. Redirect: /dashboard.</page>
+                <page path="app/(auth)/signup/page.tsx">Registration form (if applicable).</page>
+            </feature>
+            <feature name="Dashboard (Authenticated)">
+                <layout path="app/(dashboard)/layout.tsx">Sidebar/Navbar. Protected Route check.</layout>
+                <page path="app/(dashboard)/dashboard/page.tsx">Fetch ProcessingJobs. Display status cards.</page>
+            </feature>
+            <feature name="Upload Flow">
+                <page path="app/(dashboard)/upload/page.tsx">FileUploader component. Flow: Select -> Metadata -> Get Presigned URL -> Upload to S3 -> Confirm -> Redirect.</page>
+            </feature>
+            <feature name="Analysis Results">
+                <page path="app/(dashboard)/jobs/[id]/page.tsx">Poll job status. Display InterviewAnalysis data (metrics, summary).</page>
+            </feature>
+            <feature name="Public Profiles">
+                <page path="app/interviewers/[id]/page.tsx">Public accessible profile. Show aggregated stats if threshold met.</page>
+            </feature>
+        </section>
+
+        <section name="UI Integration">
+            <step>Import components from @vibecheck/ui (e.g., Button).</step>
+            <step>Ensure Tailwind content/safelist includes package paths.</step>
+        </section>
+    </proposed_changes>
+
+    <verification_plan>
+        <automated_tests>
+            <test type="Linting">pnpm lint in apps/web</test>
+            <test type="E2E" tool="Playwright">
+                <case>Auth Flow (Login/Redirect)</case>
+                <case>Upload Flow (Mock S3, Verify Job)</case>
+                <case>Navigation (Protected Routes)</case>
+            </test>
+        </automated_tests>
+        <manual_verification>
+            <step>Start Backend (pnpm dev)</step>
+            <step>Login with test credentials</step>
+            <step>Upload dummy audio file</step>
+            <step>Observe Job status change (Pending -> Completed)</step>
+            <step>Verify Analysis page visual data</step>
+        </manual_verification>
+    </verification_plan>
+</implementation_plan>
