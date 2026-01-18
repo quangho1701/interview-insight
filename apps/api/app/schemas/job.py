@@ -20,3 +20,27 @@ class JobStatusResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class JobListItem(BaseModel):
+    """Single job item in list response."""
+
+    job_id: UUID
+    status: JobStatus
+    interviewer_id: Optional[UUID] = None
+    interviewer_name: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JobListResponse(BaseModel):
+    """Response schema for paginated job list."""
+
+    items: list[JobListItem]
+    total: int
+    limit: int
+    offset: int

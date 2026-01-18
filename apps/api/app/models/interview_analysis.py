@@ -17,6 +17,7 @@ class InterviewAnalysis(SQLModel, table=True):
     user_id: UUID = Field(foreign_key="users.id", index=True)
     interviewer_id: UUID = Field(foreign_key="interviewers.id", index=True)
     sentiment_score: float = Field(ge=-1.0, le=1.0)
+    summary: Optional[str] = Field(default=None)
     metrics_json: Optional[dict[str, Any]] = Field(
         default=None,
         sa_column=Column(JSONB),

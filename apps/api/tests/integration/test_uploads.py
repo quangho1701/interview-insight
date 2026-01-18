@@ -9,6 +9,7 @@ from sqlmodel import Session
 
 from app.core.security import create_access_token, get_password_hash
 from app.models.enums import AuthProvider, JobStatus
+from app.models.interviewer import Interviewer
 from app.models.processing_job import ProcessingJob
 from app.models.user import User
 
@@ -55,6 +56,20 @@ def other_auth_headers(other_user: User) -> dict:
     """Create authorization headers for other user."""
     token = create_access_token(subject=str(other_user.id))
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def test_interviewer(db_session: Session, test_user: User) -> Interviewer:
+    """Create a test interviewer for upload tests."""
+    interviewer = Interviewer(
+        user_id=test_user.id,
+        name="Upload Test Interviewer",
+        company="Test Company",
+    )
+    db_session.add(interviewer)
+    db_session.commit()
+    db_session.refresh(interviewer)
+    return interviewer
 
 
 @pytest.fixture
@@ -165,11 +180,13 @@ class TestConfirmUploadEndpoint:
         client: TestClient,
         auth_headers: dict,
         pending_job: ProcessingJob,
+        test_interviewer: Interviewer,
         db_session: Session,
     ):
         """Successfully confirm upload updates status to QUEUED."""
         response = client.post(
             f"/api/v1/uploads/{pending_job.id}/confirm",
+            json={"interviewer_id": str(test_interviewer.id)},
             headers=auth_headers,
         )
 
@@ -181,14 +198,16 @@ class TestConfirmUploadEndpoint:
         # Verify database was updated
         db_session.refresh(pending_job)
         assert pending_job.status == JobStatus.QUEUED
+        assert pending_job.interviewer_id == test_interviewer.id
 
     def test_confirm_upload_not_found(
-        self, client: TestClient, auth_headers: dict
+        self, client: TestClient, auth_headers: dict, test_interviewer: Interviewer
     ):
         """Confirming non-existent job returns 404."""
         fake_id = uuid4()
         response = client.post(
             f"/api/v1/uploads/{fake_id}/confirm",
+            json={"interviewer_id": str(test_interviewer.id)},
             headers=auth_headers,
         )
 
@@ -200,10 +219,12 @@ class TestConfirmUploadEndpoint:
         client: TestClient,
         other_auth_headers: dict,
         pending_job: ProcessingJob,
+        test_interviewer: Interviewer,
     ):
         """Confirming another user's job returns 403."""
         response = client.post(
             f"/api/v1/uploads/{pending_job.id}/confirm",
+            json={"interviewer_id": str(test_interviewer.id)},
             headers=other_auth_headers,
         )
 
@@ -215,6 +236,7 @@ class TestConfirmUploadEndpoint:
         client: TestClient,
         auth_headers: dict,
         pending_job: ProcessingJob,
+        test_interviewer: Interviewer,
         db_session: Session,
     ):
         """Confirming already confirmed job returns 400."""
@@ -226,6 +248,7 @@ class TestConfirmUploadEndpoint:
         # Second confirmation attempt
         response = client.post(
             f"/api/v1/uploads/{pending_job.id}/confirm",
+            json={"interviewer_id": str(test_interviewer.id)},
             headers=auth_headers,
         )
 
@@ -233,10 +256,13 @@ class TestConfirmUploadEndpoint:
         assert response.json()["detail"] == "Job already confirmed"
 
     def test_confirm_upload_without_auth(
-        self, client: TestClient, pending_job: ProcessingJob
+        self, client: TestClient, pending_job: ProcessingJob, test_interviewer: Interviewer
     ):
         """Confirming without auth returns 401."""
-        response = client.post(f"/api/v1/uploads/{pending_job.id}/confirm")
+        response = client.post(
+            f"/api/v1/uploads/{pending_job.id}/confirm",
+            json={"interviewer_id": str(test_interviewer.id)},
+        )
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Not authenticated"

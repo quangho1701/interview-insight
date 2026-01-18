@@ -62,8 +62,18 @@ class TestInterviewerCRUD:
 
     def test_db_interviewer_crud(self, db_session: Session):
         """CRUD operations work for Interviewer with profile_status updates."""
-        # Create
+        # Create User first (required for Interviewer)
+        user = User(
+            provider=AuthProvider.LOCAL,
+            email="interviewer-crud-test@example.com",
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+        # Create Interviewer
         interviewer = Interviewer(
+            user_id=user.id,
             name="Jane Doe",
             company="Acme Corp",
         )
@@ -88,6 +98,7 @@ class TestInterviewerCRUD:
 
         # Delete
         db_session.delete(fetched)
+        db_session.delete(user)
         db_session.commit()
 
         deleted = db_session.get(Interviewer, interviewer_id)
@@ -110,6 +121,7 @@ class TestRelationships:
 
         # Create Interviewer
         interviewer = Interviewer(
+            user_id=user.id,
             name="John Smith",
             company="TechCorp",
         )
@@ -183,6 +195,7 @@ class TestRelationships:
 
         # Create Interviewer
         interviewer = Interviewer(
+            user_id=user.id,
             name="Cascade Test",
             company="Cascade Corp",
         )

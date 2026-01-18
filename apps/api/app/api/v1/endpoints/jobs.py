@@ -1,14 +1,44 @@
 """Job status endpoints."""
 
+from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
-from app.schemas.job import JobStatusResponse
+from app.models.enums import JobStatus
+from app.schemas.job import JobListItem, JobListResponse, JobStatusResponse
 from app.services.job_service import JobService
 
 router = APIRouter()
+
+
+@router.get("", response_model=JobListResponse)
+def list_jobs(
+    current_user: CurrentUser,
+    session: SessionDep,
+    status_filter: Optional[JobStatus] = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> JobListResponse:
+    """List all jobs for the current user.
+
+    Optional status filter and pagination support.
+    """
+    job_service = JobService(session)
+    items, total = job_service.list_for_user(
+        user_id=current_user.id,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+
+    return JobListResponse(
+        items=[JobListItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
