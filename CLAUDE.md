@@ -32,6 +32,21 @@ alembic revision -m "message"   # Create migration
 uvicorn app.main:app --reload   # Run dev server (port 8000)
 ```
 
+### UI Package (packages/ui)
+```bash
+cd packages/ui
+pnpm storybook                  # Run Storybook dev server (port 6006)
+pnpm build-storybook            # Build static Storybook
+```
+
+### Worker (workers)
+```bash
+cd workers
+pip install -e .                            # Install base dependencies
+pip install -e ".[ml]"                      # Install with ML dependencies (CUDA recommended)
+celery -A app.main worker --loglevel=info   # Run Celery worker
+```
+
 ### Docker
 ```bash
 docker-compose -f docker/docker-compose.yml up      # Production (Postgres:5432, Redis:6379)
@@ -69,7 +84,15 @@ workers/                        # Celery ML worker (transcription + summarizatio
 └── Dockerfile                  # Python 3.11, ffmpeg, CUDA-ready
 
 docker/                         # Docker Compose files for local dev
-packages/                       # Shared libs (types, ui) - planned
+packages/
+├── ui/                         # @vibecheck/ui component library
+│   ├── src/
+│   │   ├── components/         # Button, Card, Input (with *.stories.tsx)
+│   │   ├── lib/utils.ts        # cn() utility for class merging
+│   │   └── index.ts            # Public exports
+│   ├── .storybook/             # Storybook configuration (Vite-based)
+│   └── tailwind.config.ts      # Tailwind with animations plugin
+└── types/                      # Shared TypeScript types (scaffold)
 ```
 
 ## Key Patterns
@@ -117,6 +140,12 @@ The worker (`workers/app/tasks.py`) processes interviews through:
 6. Cleanup temp file
 
 Services are lazy-initialized as singletons per worker process. Install ML dependencies with `pip install -e ".[ml]"` in the workers directory.
+
+### UI Components (@vibecheck/ui)
+- **Styling:** Components use `class-variance-authority` (cva) for variant definitions
+- **Class merging:** Use `cn()` from `lib/utils.ts` which combines `clsx` + `tailwind-merge`
+- **Primitives:** Radix UI for accessible base components (`@radix-ui/react-slot`)
+- **Stories:** Each component has a co-located `*.stories.tsx` file for Storybook
 
 ## Naming Conventions
 
