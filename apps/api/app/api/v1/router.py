@@ -2,11 +2,12 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import analysis, interviewers, jobs, login, uploads
+from app.api.v1.endpoints import analysis, interviewers, jobs, login, uploads, users
 
 api_router = APIRouter()
 
 api_router.include_router(login.router, tags=["auth"])
+api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(interviewers.router, prefix="/interviewers", tags=["interviewers"])
