@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VibeCheck is an AI-powered interview analysis platform built as a full-stack monorepo. Users upload interview recordings which are transcribed, analyzed for sentiment and metrics, and aggregated into interviewer profiles.
 
-**Stack:** FastAPI (Python) backend, Next.js 14 frontend (scaffold), PostgreSQL, Redis, ML worker (planned)
+**Stack:** FastAPI (Python) backend, Next.js 14 frontend (scaffold), PostgreSQL, Redis, Celery ML worker
 
 ## Commands
 
@@ -60,7 +60,14 @@ apps/api/                       # FastAPI backend
 └── alembic/                    # Database migrations
 
 apps/web/                       # Next.js frontend (scaffold only)
-workers/                        # ML processing worker (planned - Whisper, diarization, sentiment)
+workers/                        # Celery ML worker (transcription + summarization)
+├── app/
+│   ├── main.py                 # Celery app initialization
+│   ├── tasks.py                # process_interview task
+│   ├── core/                   # config.py, database.py
+│   └── services/               # s3.py, transcription.py, summarization.py
+└── Dockerfile                  # Python 3.11, ffmpeg, CUDA-ready
+
 docker/                         # Docker Compose files for local dev
 packages/                       # Shared libs (types, ui) - planned
 ```
@@ -90,15 +97,26 @@ packages/                       # Shared libs (types, ui) - planned
 - `client` fixture overrides `get_session` dependency
 
 ### File Upload Flow
-1. Client requests presigned URL via `/api/v1/uploads/presign`
+1. Client requests presigned URL via `POST /api/v1/uploads/presigned-url` (creates ProcessingJob with status=PENDING)
 2. Client uploads directly to S3 using presigned URL
-3. Client confirms upload via `/api/v1/uploads/confirm` → creates ProcessingJob → enqueues Celery task
-4. Client polls job status via `/api/v1/jobs/{job_id}`
+3. Client confirms upload via `POST /api/v1/uploads/{job_id}/confirm` → sets interviewer_id → enqueues Celery task
+4. Client polls job status via `GET /api/v1/jobs/{job_id}`
 
 ### Background Jobs
 - Celery app configured in `core/celery_utils.py` with Redis broker
 - Task enqueuing via `enqueue_interview_processing(job_id)` function
 - Task name constant: `TASK_PROCESS_INTERVIEW = "vibecheck.tasks.process_interview"`
+
+### ML Worker Pipeline
+The worker (`workers/app/tasks.py`) processes interviews through:
+1. Download audio from S3 to temp file
+2. Transcribe using faster-whisper (distil-large-v3 model)
+3. Summarize using Llama 3.3 8B (4-bit quantization)
+4. Create `InterviewAnalysis` record with sentiment score and metrics
+5. Update job status to COMPLETED
+6. Cleanup temp file
+
+Services are lazy-initialized as singletons per worker process. Install ML dependencies with `pip install -e ".[ml]"` in the workers directory.
 
 ## Naming Conventions
 
