@@ -22,14 +22,15 @@ pnpm format         # Prettier format
 ### Backend (apps/api)
 ```bash
 cd apps/api
-pytest                          # Run all tests
-pytest tests/unit/              # Unit tests only
-pytest tests/integration/       # Integration tests only
-pytest -k "test_name"           # Run specific test
-pytest --cov                    # Run with coverage
-alembic upgrade head            # Apply migrations
-alembic revision -m "message"   # Create migration
-uvicorn app.main:app --reload   # Run dev server (port 8000)
+pip install -e ".[dev]"                     # Install with dev dependencies
+pytest                                      # Run all tests
+pytest tests/unit/                          # Unit tests only
+pytest tests/integration/                   # Integration tests only
+pytest -k "test_name"                       # Run specific test
+pytest --cov                                # Run with coverage
+alembic upgrade head                        # Apply migrations
+alembic revision --autogenerate -m "msg"    # Create migration (auto-detect changes)
+uvicorn app.main:app --reload               # Run dev server (port 8000)
 ```
 
 ### UI Package (packages/ui)
@@ -62,11 +63,11 @@ apps/api/                       # FastAPI backend
 │   │   ├── deps.py             # Dependency injection (CurrentUser, SessionDep, S3ServiceDep)
 │   │   └── v1/
 │   │       ├── router.py       # Aggregates all endpoint routers
-│   │       └── endpoints/      # Route handlers (login, uploads, jobs)
+│   │       └── endpoints/      # Route handlers (login, uploads, jobs, interviewers, analysis)
 │   ├── core/                   # config.py, database.py, security.py
 │   ├── models/                 # SQLModel ORM (User, Interviewer, InterviewAnalysis, ProcessingJob)
 │   ├── schemas/                # Pydantic request/response schemas
-│   ├── services/               # Business logic (s3_service.py, job_service.py)
+│   ├── services/               # Business logic (s3_service.py, job_service.py, interviewer_service.py)
 │   └── main.py                 # FastAPI app, CORS, health check
 ├── tests/
 │   ├── conftest.py             # Fixtures: db_session, client (transactional rollback)
@@ -99,6 +100,7 @@ packages/
 
 ### API Structure
 - **Router pattern:** Endpoints in `api/v1/endpoints/` are aggregated by `api/v1/router.py` and mounted at `/api/v1`
+- **Endpoints:** `login` (auth), `uploads`, `jobs`, `interviewers`, `analysis`
 - **Dependency injection:** Use type aliases from `api/deps.py`:
   - `CurrentUser` - authenticated user from JWT
   - `SessionDep` - database session
