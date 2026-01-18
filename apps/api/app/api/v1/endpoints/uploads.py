@@ -10,6 +10,7 @@ from app.core.celery_utils import enqueue_interview_processing
 from app.models.enums import JobStatus
 from app.models.processing_job import ProcessingJob
 from app.schemas.upload import (
+    ConfirmUploadRequest,
     JobConfirmResponse,
     PresignedUrlRequest,
     PresignedUrlResponse,
@@ -65,13 +66,14 @@ def create_presigned_url(
 @router.post("/{job_id}/confirm", response_model=JobConfirmResponse)
 def confirm_upload(
     job_id: UUID,
+    request: ConfirmUploadRequest,
     current_user: CurrentUser,
     session: SessionDep,
 ) -> JobConfirmResponse:
     """Confirm that a file upload has completed.
 
     Updates the ProcessingJob status from PENDING to QUEUED,
-    marking it ready for processing.
+    sets the interviewer_id, and marks it ready for processing.
     """
     job = session.get(ProcessingJob, job_id)
 
@@ -94,6 +96,7 @@ def confirm_upload(
         )
 
     job.status = JobStatus.QUEUED
+    job.interviewer_id = request.interviewer_id
     session.add(job)
     session.commit()
     session.refresh(job)

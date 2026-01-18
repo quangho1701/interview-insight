@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: int = 6379
 
+    # S3/MinIO settings
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_bucket_name: str = "vibecheck-uploads"
+    s3_region: str = "us-east-1"
+
     @property
     def database_url(self) -> str:
         """Construct PostgreSQL database URL."""

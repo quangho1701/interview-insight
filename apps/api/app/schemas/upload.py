@@ -41,6 +41,12 @@ class PresignedUrlResponse(BaseModel):
     s3_key: str
 
 
+class ConfirmUploadRequest(BaseModel):
+    """Request schema for confirming an upload."""
+
+    interviewer_id: UUID
+
+
 class JobConfirmResponse(BaseModel):
     """Response schema for job confirmation."""
 

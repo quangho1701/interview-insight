@@ -16,6 +16,11 @@ class ProcessingJob(SQLModel, table=True):
 
     id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", index=True)
+    interviewer_id: Optional[UUID] = Field(
+        default=None,
+        foreign_key="interviewers.id",
+        index=True,
+    )
     analysis_id: Optional[UUID] = Field(
         default=None,
         foreign_key="interview_analyses.id",
