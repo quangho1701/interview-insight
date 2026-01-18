@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_plan>
+    <meta>
+        <phase>8</phase>
+        <title>Fix Interviewer Creation Bug</title>
+        <author>Antigravity</author>
+        <date>2026-01-18</date>
+    </meta>
+
+    <overview>
+        <problem>
+            Users are unable to create a new interviewer from the Upload page. The UI shows a generic failure message, even though the backend has been updated to allow optional company names.
+        </problem>
+        <root_cause_analysis>
+            <backend_status>
+                Verified working. Integration tests confirm that the API accepts payloads with missing 'company' field or empty 'company' strings.
+            </backend_status>
+            <frontend_status>
+                Suspected cause. The frontend `createInterviewer` function in `upload/page.tsx` catches errors but likely alerts a generic "Failed to create interviewer" message without showing the specific validation error from the API `(error.response.data.detail)`.
+            </frontend_status>
+        </root_cause_analysis>
+    </overview>
+
+    <execution_steps>
+        <step id="1">
+            <file_path>apps/web/src/app/(dashboard)/upload/page.tsx</file_path>
+            <component>UploadPage</component>
+            <function>createInterviewer</function>
+            <instructions>
+                1. Locate the `createInterviewer` function.
+                2. In the `catch` block, inspect `error.response`.
+                3. Update the `alert()` logic to display `error.response?.data?.detail` if it exists. This will reveal if the server is rejecting the request due to specific validation rules (e.g., name length, existing user limits).
+                4. Verify the payload being sent in `api.post`. Ensure `name` is being correctly passed from the state.
+            </instructions>
+            <code_snippet language="typescript">
+<![CDATA[
+// Proposed Error Handling Logic
+catch (error: any) {
+    console.error("Failed to create interviewer", error);
+    const errorMessage = error.response?.data?.detail || "Failed to create interviewer";
+    alert(errorMessage);
+}
+]]>
+            </code_snippet>
+        </step>
+        <step id="2">
+            <verification>
+                1. Navigate to /upload page.
+                2. Click "Create New Interviewer".
+                3. Enter a name.
+                4. Click "Save".
+                5. If it fails, observing the specific alert message will pinpoint the remaining issue.
+            </verification>
+        </step>
+    </execution_steps>
+</implementation_plan>
