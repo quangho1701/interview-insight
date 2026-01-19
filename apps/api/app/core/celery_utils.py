@@ -9,8 +9,8 @@ settings = get_settings()
 # Initialize Celery app - name MUST match worker's app name
 celery_app = Celery(
     "vibecheck",
-    broker=settings.redis_url,
-    backend=settings.redis_url,
+    broker=settings.get_redis_url(),
+    backend=settings.get_redis_url(),
 )
 
 # Celery configuration

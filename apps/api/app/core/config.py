@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     database_name: str = "vibecheck"
 
     # Redis settings
+    redis_url: str | None = None  # Full Redis URL (takes precedence)
     redis_host: str = "localhost"
     redis_port: int = 6379
 
@@ -56,9 +57,10 @@ class Settings(BaseSettings):
             f"@{self.database_host}:{self.database_port}/{self.database_name}"
         )
 
-    @property
-    def redis_url(self) -> str:
-        """Construct Redis URL."""
+    def get_redis_url(self) -> str:
+        """Get Redis URL (use redis_url if set, otherwise construct from host/port)."""
+        if self.redis_url:
+            return self.redis_url
         return f"redis://{self.redis_host}:{self.redis_port}/0"
 
 

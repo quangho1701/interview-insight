@@ -91,4 +91,4 @@ class TestRedisUrl:
 
             settings = Settings()
 
-            assert settings.redis_url == "redis://myredis:6380/0"
+            assert settings.get_redis_url() == "redis://myredis:6380/0"
