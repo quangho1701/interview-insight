@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VibeCheck is an AI-powered interview analysis platform built as a full-stack monorepo. Users upload interview recordings which are transcribed, analyzed for sentiment and metrics, and aggregated into interviewer profiles.
 
-**Stack:** FastAPI (Python) backend, Next.js 14 frontend (scaffold), PostgreSQL, Redis, Celery ML worker
+**Stack:** FastAPI (Python) backend, Next.js 14 frontend (App Router), PostgreSQL, Redis, Celery ML worker
 
 ## Commands
 
@@ -31,6 +31,14 @@ pytest --cov                                # Run with coverage
 alembic upgrade head                        # Apply migrations
 alembic revision --autogenerate -m "msg"    # Create migration (auto-detect changes)
 uvicorn app.main:app --reload               # Run dev server (port 8000)
+```
+
+### Frontend (apps/web)
+```bash
+cd apps/web
+pnpm dev                        # Run Next.js dev server (port 3000)
+pnpm build                      # Build for production
+pnpm lint                       # Run ESLint
 ```
 
 ### UI Package (packages/ui)
@@ -75,7 +83,14 @@ apps/api/                       # FastAPI backend
 │   └── integration/            # API endpoint tests
 └── alembic/                    # Database migrations
 
-apps/web/                       # Next.js frontend (scaffold only)
+apps/web/                       # Next.js 14 frontend (App Router)
+├── src/
+│   ├── app/                    # App Router pages and layouts
+│   │   ├── (auth)/             # Auth route group (login, signup)
+│   │   └── (dashboard)/        # Dashboard route group (protected)
+│   ├── components/             # React components (Sidebar, Header)
+│   ├── context/                # React Context providers (AuthContext)
+│   └── lib/                    # Utilities (api-client.ts, utils.ts)
 workers/                        # Celery ML worker (transcription + summarization)
 ├── app/
 │   ├── main.py                 # Celery app initialization
@@ -110,6 +125,13 @@ packages/
 - Pydantic Settings with `get_settings()` cached via `@lru_cache`
 - Environment variables loaded from `.env` file (see config.py for all options)
 - Test env uses different ports: DATABASE_PORT=5433, REDIS_PORT=6380
+- Frontend env vars in `apps/web/.env.local`: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_DEV_AUTH_BYPASS`
+
+### Dev Authentication Bypass
+For local development without OAuth setup:
+- Backend: Set `DEV_AUTH_BYPASS=true` in `apps/api/.env` → creates guest user automatically
+- Frontend: Set `NEXT_PUBLIC_DEV_AUTH_BYPASS=true` in `apps/web/.env.local` → auto-fetches dev token
+- Guest user ID: `00000000-0000-0000-0000-000000000000` (defined in `core/config.py`)
 
 ### Database
 - SQLModel ORM with mixins in `models/base.py` (UUIDMixin, TimestampMixin)
@@ -142,6 +164,12 @@ The worker (`workers/app/tasks.py`) processes interviews through:
 6. Cleanup temp file
 
 Services are lazy-initialized as singletons per worker process. Install ML dependencies with `pip install -e ".[ml]"` in the workers directory.
+
+### Frontend Patterns (apps/web)
+- **Route groups:** `(auth)` for login/signup, `(dashboard)` for protected pages
+- **Auth flow:** `AuthContext` provides `useAuth()` hook with `login()`, `logout()`, `isAuthenticated`
+- **API client:** Axios instance at `lib/api-client.ts` with JWT interceptor (reads token from localStorage)
+- **Protected routes:** Dashboard layout redirects to `/login` if not authenticated
 
 ### UI Components (@vibecheck/ui)
 - **Styling:** Components use `class-variance-authority` (cva) for variant definitions

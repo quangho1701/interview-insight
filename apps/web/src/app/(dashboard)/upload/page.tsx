@@ -42,16 +42,27 @@ export default function UploadPage() {
     };
 
     const createInterviewer = async () => {
-        if (!newInterviewerName) return;
+        const trimmedName = newInterviewerName.trim();
+        if (!trimmedName) {
+            alert("Please enter an interviewer name");
+            return;
+        }
+        console.log("Creating interviewer with payload:", { name: trimmedName });
         try {
-            const { data } = await api.post("/interviewers", { name: newInterviewerName });
+            const { data } = await api.post("/interviewers", { name: trimmedName });
             setInterviewers([...interviewers, data]);
             setSelectedInterviewer(data.id);
             setIsCreatingInterviewer(false);
             setNewInterviewerName("");
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to create interviewer", error);
-            alert("Failed to create interviewer");
+            const detail = error.response?.data?.detail;
+            const errorMessage = typeof detail === 'string'
+                ? detail
+                : Array.isArray(detail)
+                    ? detail.map((e: any) => e.msg).join(', ')
+                    : "Failed to create interviewer";
+            alert(errorMessage);
         }
     };
 

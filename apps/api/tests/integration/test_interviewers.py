@@ -133,17 +133,20 @@ class TestCreateInterviewer:
 
         assert response.status_code == 422
 
-    def test_create_interviewer_missing_company(
+    def test_create_interviewer_without_company(
         self, client: TestClient, auth_headers: dict
     ):
-        """Request without company returns 422."""
+        """Request without company should succeed (company is optional)."""
         response = client.post(
             "/api/v1/interviewers",
             json={"name": "Test Name"},
             headers=auth_headers,
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Test Name"
+        assert data["company"] is None
 
     def test_create_interviewer_invalid_email(
         self, client: TestClient, auth_headers: dict
