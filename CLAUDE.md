@@ -115,7 +115,7 @@ packages/
 
 ### API Structure
 - **Router pattern:** Endpoints in `api/v1/endpoints/` are aggregated by `api/v1/router.py` and mounted at `/api/v1`
-- **Endpoints:** `login` (auth), `uploads`, `jobs`, `interviewers`, `analysis`
+- **Endpoints:** `login` (auth), `users` (registration), `uploads`, `jobs`, `interviewers`, `analysis`
 - **Dependency injection:** Use type aliases from `api/deps.py`:
   - `CurrentUser` - authenticated user from JWT
   - `SessionDep` - database session
@@ -167,8 +167,10 @@ Services are lazy-initialized as singletons per worker process. Install ML depen
 
 ### Frontend Patterns (apps/web)
 - **Route groups:** `(auth)` for login/signup, `(dashboard)` for protected pages
+- **Public routes:** `interviewers/[id]` page is outside route groups (publicly accessible)
 - **Auth flow:** `AuthContext` provides `useAuth()` hook with `login()`, `logout()`, `isAuthenticated`
 - **API client:** Axios instance at `lib/api-client.ts` with JWT interceptor (reads token from localStorage)
+- **Data fetching:** TanStack Query (`@tanstack/react-query`) for server state management
 - **Protected routes:** Dashboard layout redirects to `/login` if not authenticated
 
 ### UI Components (@vibecheck/ui)
