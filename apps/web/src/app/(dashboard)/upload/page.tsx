@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api-client";
+import { useAuth } from "@clerk/nextjs";
+import { apiWithAuth } from "@/lib/api-client";
 import { Button, Input, Card, CardHeader, CardTitle, CardContent, CardFooter } from "@vibecheck/ui";
 import { UploadCloud, CheckCircle, Loader2, User } from "lucide-react";
 import axios from "axios";
@@ -21,19 +22,21 @@ export default function UploadPage() {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const router = useRouter();
+    const { getToken } = useAuth();
 
     // Fetch interviewers on mount
     useEffect(() => {
         const fetchInterviewers = async () => {
             try {
-                const { data } = await api.get("/interviewers");
+                const token = await getToken();
+                const { data } = await apiWithAuth(token).get("/interviewers");
                 setInterviewers(data.items);
             } catch (error) {
                 console.error("Failed to fetch interviewers", error);
             }
         };
         fetchInterviewers();
-    }, []);
+    }, [getToken]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -49,7 +52,8 @@ export default function UploadPage() {
         }
         console.log("Creating interviewer with payload:", { name: trimmedName });
         try {
-            const { data } = await api.post("/interviewers", { name: trimmedName });
+            const token = await getToken();
+            const { data } = await apiWithAuth(token).post("/interviewers", { name: trimmedName });
             setInterviewers([...interviewers, data]);
             setSelectedInterviewer(data.id);
             setIsCreatingInterviewer(false);
@@ -72,8 +76,9 @@ export default function UploadPage() {
         setUploadProgress(0);
 
         try {
+            const token = await getToken();
             // 1. Get Presigned URL
-            const { data: presignedData } = await api.post("/uploads/presigned-url", {
+            const { data: presignedData } = await apiWithAuth(token).post("/uploads/presigned-url", {
                 filename: file.name,
                 content_type: file.type,
             });
@@ -116,7 +121,7 @@ export default function UploadPage() {
             }
 
             // 3. Confirm Upload
-            await api.post(`/uploads/${job_id}/confirm`, {
+            await apiWithAuth(token).post(`/uploads/${job_id}/confirm`, {
                 interviewer_id: selectedInterviewer,
             });
 

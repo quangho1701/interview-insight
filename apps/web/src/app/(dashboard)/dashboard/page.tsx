@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api-client";
+import { useAuth } from "@clerk/nextjs";
+import { apiWithAuth } from "@/lib/api-client";
 import { Card, CardHeader, CardTitle, CardContent, Button } from "@vibecheck/ui";
 import Link from "next/link";
 import { FileText, Loader2, PlayCircle } from "lucide-react";
@@ -17,11 +18,13 @@ interface ProcessingJob {
 export default function DashboardPage() {
     const [jobs, setJobs] = useState<ProcessingJob[]>([]);
     const [loading, setLoading] = useState(true);
+    const { getToken } = useAuth();
 
     useEffect(() => {
         const fetchJobs = async () => {
             try {
-                const { data } = await api.get("/jobs");
+                const token = await getToken();
+                const { data } = await apiWithAuth(token).get("/jobs");
                 setJobs(data.items);
             } catch (error) {
                 console.error("Failed to fetch jobs", error);
@@ -31,7 +34,7 @@ export default function DashboardPage() {
         };
 
         fetchJobs();
-    }, []);
+    }, [getToken]);
 
     if (loading) {
         return <div className="flex items-center justify-center h-48"><Loader2 className="h-8 w-8 animate-spin text-vibe-green" /></div>;

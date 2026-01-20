@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from app.core.config import get_settings, GUEST_USER_ID, GUEST_USER_EMAIL
 from app.core.database import get_session
-from app.core.security import decode_access_token
+from app.core.clerk_auth import verify_clerk_token, ClerkAuthError
 from app.models.user import User
 from app.models.enums import AuthProvider
 from app.services.s3_service import S3Service
@@ -42,10 +42,12 @@ def get_current_user(
     token: Annotated[str | None, Depends(oauth2_scheme_optional)],
     session: Annotated[Session, Depends(get_session)],
 ) -> User:
-    """Extract and validate current user from JWT token.
+    """Extract and validate current user from Clerk JWT token.
+
+    On first API call, creates a local User record synced from Clerk.
 
     Args:
-        token: Bearer token from Authorization header.
+        token: Bearer token from Authorization header (Clerk-issued).
         session: Database session.
 
     Returns:
@@ -69,17 +71,45 @@ def get_current_user(
     if token is None:
         raise credentials_exception
 
-    payload = decode_access_token(token)
-    if payload is None:
+    try:
+        payload = verify_clerk_token(token)
+    except ClerkAuthError:
         raise credentials_exception
 
-    user_id: str | None = payload.get("sub")
-    if user_id is None:
+    clerk_id: str | None = payload.get("sub")
+    if clerk_id is None:
         raise credentials_exception
 
-    user = session.exec(select(User).where(User.id == user_id)).first()
+    # Look up user by clerk_id
+    user = session.exec(select(User).where(User.clerk_id == clerk_id)).first()
+
     if user is None:
-        raise credentials_exception
+        # User sync: create local record on first API call
+        email = payload.get("email", f"{clerk_id}@clerk.user")
+
+        # Check if email already exists (from previous auth method)
+        existing_by_email = session.exec(
+            select(User).where(User.email == email)
+        ).first()
+
+        if existing_by_email:
+            # Link existing user to Clerk
+            existing_by_email.clerk_id = clerk_id
+            existing_by_email.provider = AuthProvider.CLERK
+            session.add(existing_by_email)
+            session.commit()
+            session.refresh(existing_by_email)
+            return existing_by_email
+
+        # Create new user
+        user = User(
+            clerk_id=clerk_id,
+            email=email,
+            provider=AuthProvider.CLERK,
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
 
     return user
 

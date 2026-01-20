@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-// import { Inter } from "next/font/google"; 
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -15,12 +14,23 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en" className="dark">
-            <body className={cn("min-h-screen bg-background font-sans antialiased", "bg-black text-white")}>
-                <AuthProvider>
+        <ClerkProvider
+            appearance={{
+                variables: {
+                    colorPrimary: "#22c55e",
+                    colorBackground: "#09090b",
+                    colorInputBackground: "#18181b",
+                    colorInputText: "#ffffff",
+                    colorText: "#ffffff",
+                    colorTextSecondary: "#a1a1aa",
+                },
+            }}
+        >
+            <html lang="en" className="dark">
+                <body className={cn("min-h-screen bg-background font-sans antialiased", "bg-black text-white")}>
                     {children}
-                </AuthProvider>
-            </body>
-        </html>
+                </body>
+            </html>
+        </ClerkProvider>
     );
 }

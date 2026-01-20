@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api-client";
+import { useAuth } from "@clerk/nextjs";
+import { apiWithAuth } from "@/lib/api-client";
 import { Card, CardHeader, CardTitle, CardContent, Button } from "@vibecheck/ui";
 import { Loader2, ArrowLeft, BarChart2, MessageSquare, Brain } from "lucide-react";
 import Link from "next/link";
@@ -30,17 +31,23 @@ export default function JobDetailsPage() {
     const [analysis, setAnalysis] = useState<InterviewAnalysis | null>(null);
     const [loading, setLoading] = useState(true);
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
+    const { getToken } = useAuth();
 
-    const fetchJob = async () => {
+    const fetchAnalysis = useCallback(async () => {
+        try {
+            const token = await getToken();
+            const { data } = await apiWithAuth(token).get(`/analysis/${id}`);
+            setAnalysis(data);
+        } catch (error) {
+            console.error("Failed to fetch analysis", error);
+        }
+    }, [id, getToken]);
+
+    const fetchJob = useCallback(async () => {
         if (!id) return;
         try {
-            // Assuming GET /jobs/{id} exists or we use list and find?
-            // Roadmap says: GET /api/v1/jobs (list). 
-            // Does GET /api/v1/jobs/{id} exist?
-            // Step 67 said: GET /api/v1/jobs/{id} is client poll target in plan.
-            // Backend plan included it? 
-            // "Step 128: Client polls job status via GET /api/v1/jobs/{job_id}" -> Yes.
-            const { data } = await api.get(`/jobs/${id}`);
+            const token = await getToken();
+            const { data } = await apiWithAuth(token).get(`/jobs/${id}`);
             setJob(data);
 
             if (data.status === "COMPLETED") {
@@ -56,16 +63,7 @@ export default function JobDetailsPage() {
         } finally {
             setLoading(false);
         }
-    };
-
-    const fetchAnalysis = async () => {
-        try {
-            const { data } = await api.get(`/analysis/${id}`);
-            setAnalysis(data);
-        } catch (error) {
-            console.error("Failed to fetch analysis", error);
-        }
-    };
+    }, [id, getToken, fetchAnalysis]);
 
     useEffect(() => {
         fetchJob();
@@ -78,7 +76,7 @@ export default function JobDetailsPage() {
         return () => {
             if (pollInterval.current) clearInterval(pollInterval.current);
         };
-    }, [id]);
+    }, [fetchJob]);
 
     if (loading && !job) {
         return <div className="flex justify-center p-10"><Loader2 className="h-8 w-8 animate-spin text-vibe-green" /></div>;

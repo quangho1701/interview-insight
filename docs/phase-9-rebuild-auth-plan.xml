@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Roadmap>
+  <Phase name="Authentication Rebuild (Clerk)" status="planned">
+    <CompletedDate></CompletedDate>
+    <Goal>Rebuild the "VibeCheck" authentication system using Clerk, replacing the custom JWT implementation with a state-of-the-art managed solution for both Next.js and FastAPI.</Goal>
+    <Description>
+      Phase 9 involves a complete overhaul of the authentication layer.
+      We will integrate Clerk's Next.js SDK for frontend session management and UI components.
+      The backend will be updated to verify Clerk-issued ID tokens using JWKS (JSON Web Key Sets), ensuring secure stateless authentication.
+      Users will be synced to the local database on first authenticated API call.
+    </Description>
+
+    <CurrentState>
+      <Exists>
+        <Item>Custom AuthContext (React) - localStorage JWT</Item>
+        <Item>Local JWT issuance (FastAPI) - HS256 with PyJWT</Item>
+        <Item>Basic Login/Signup forms - Custom React components</Item>
+        <Item>User model with hashed_password field</Item>
+        <Item>Dev auth bypass mode</Item>
+      </Exists>
+      <Missing>
+        <Item>Clerk SDK Integration</Item>
+        <Item>Next.js Middleware for route protection</Item>
+        <Item>Backend JWKS Verification Logic</Item>
+        <Item>Clerk UI Components (SignIn/SignUp)</Item>
+        <Item>User sync logic (Clerk → local DB)</Item>
+        <Item>Database migration for clerk_id</Item>
+      </Missing>
+    </CurrentState>
+
+    <Prerequisites>
+      <Item>Create Clerk account at clerk.com</Item>
+      <Item>Create new Clerk application for VibeCheck</Item>
+      <Item>Configure JWT Template named "fastapi" in Clerk Dashboard (Sessions → JWT Templates)</Item>
+      <Item>Note down: Publishable Key, Secret Key, and Issuer URL</Item>
+    </Prerequisites>
+
+    <EnvironmentVariables>
+      <Frontend file="apps/web/.env.local">
+        <Var name="NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY">pk_test_...</Var>
+        <Var name="CLERK_SECRET_KEY">sk_test_...</Var>
+        <Var name="NEXT_PUBLIC_CLERK_SIGN_IN_URL">/login</Var>
+        <Var name="NEXT_PUBLIC_CLERK_SIGN_UP_URL">/signup</Var>
+        <Var name="NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL">/dashboard</Var>
+        <Var name="NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL">/dashboard</Var>
+      </Frontend>
+      <Backend file="apps/api/.env">
+        <Var name="CLERK_ISSUER">https://your-app.clerk.accounts.dev</Var>
+        <Var name="CLERK_JWKS_URL">https://your-app.clerk.accounts.dev/.well-known/jwks.json</Var>
+        <Var name="DEV_AUTH_BYPASS" note="Remove or set to false">false</Var>
+      </Backend>
+    </EnvironmentVariables>
+
+    <Strategy>
+      <Item priority="Critical">Install and configure **@clerk/nextjs**.</Item>
+      <Item priority="Critical">Implement **Next.js Middleware** for edge-compatible route protection.</Item>
+      <Item priority="Critical">Update FastAPI to **verify Clerk Tokens** via JWKS.</Item>
+      <Item priority="Critical">Add **database migration** for clerk_id field.</Item>
+      <Item priority="Critical">Implement **user sync logic** (create local User on first API call).</Item>
+      <Item priority="High">Replace manual auth forms with **Clerk Pre-built Components**.</Item>
+      <Item priority="High">**Remove deprecated endpoints** (login, registration, dev-token).</Item>
+      <Item priority="Medium">Update **Dashboard layout** to remove manual auth checks.</Item>
+    </Strategy>
+
+    <Steps>
+      <!-- BACKEND STEPS FIRST (dependency for frontend) -->
+
+      <Step order="1" type="Backend Setup">
+        <Action>Add Clerk Configuration.</Action>
+        <Details>
+          - Add `CLERK_ISSUER` and `CLERK_JWKS_URL` settings to config.py.
+          - Remove or deprecate `SECRET_KEY` and `access_token_expire_minutes` (no longer used for JWT creation).
+          - Keep `DEV_AUTH_BYPASS` setting but default to false.
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/core/config.py</File>
+          <File action="update">apps/api/.env</File>
+        </Files>
+      </Step>
+
+      <Step order="2" type="Backend Database">
+        <Action>Database Migration for Clerk ID.</Action>
+        <Details>
+          - Add `clerk_id: str | None` field to User model (unique, indexed).
+          - Make `hashed_password` field optional (nullable).
+          - Remove `oauth_id` field or rename to `clerk_id`.
+          - Create Alembic migration: `alembic revision --autogenerate -m "add_clerk_id_to_user"`.
+          - Apply migration: `alembic upgrade head`.
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/models/user.py</File>
+          <File action="create">apps/api/alembic/versions/xxxx_add_clerk_id_to_user.py</File>
+        </Files>
+      </Step>
+
+      <Step order="3" type="Backend Auth">
+        <Action>Implement JWKS Verification.</Action>
+        <Details>
+          - Create `clerk_auth.py` helper module.
+          - Use PyJWT's `PyJWKClient` to fetch and cache JWKS from Clerk.
+          - Implement `verify_clerk_token(token: str) -> dict` function.
+          - Validate: signature (RS256), issuer (`iss`), expiration (`exp`), audience if configured.
+          - Return decoded payload with `sub` (Clerk user ID) and user metadata.
+        </Details>
+        <Files>
+          <File action="create">apps/api/app/core/clerk_auth.py</File>
+          <File action="update">apps/api/app/core/security.py</File>
+        </Files>
+        <CodeSnippet lang="python" file="clerk_auth.py">
+import jwt
+from jwt import PyJWKClient
+from functools import lru_cache
+from app.core.config import get_settings
+
+@lru_cache()
+def get_jwk_client() -> PyJWKClient:
+    settings = get_settings()
+    return PyJWKClient(settings.CLERK_JWKS_URL)
+
+def verify_clerk_token(token: str) -> dict:
+    settings = get_settings()
+    jwk_client = get_jwk_client()
+    signing_key = jwk_client.get_signing_key_from_jwt(token)
+    return jwt.decode(
+        token,
+        signing_key.key,
+        algorithms=["RS256"],
+        issuer=settings.CLERK_ISSUER,
+    )
+        </CodeSnippet>
+      </Step>
+
+      <Step order="4" type="Backend Auth">
+        <Action>Update Auth Dependencies with User Sync.</Action>
+        <Details>
+          - Update `get_current_user()` in deps.py to use Clerk token verification.
+          - Extract `sub` (Clerk user ID) from decoded token.
+          - Query User by `clerk_id`.
+          - If user not found, create new User record (sync from Clerk).
+          - Optionally fetch user metadata from Clerk API for email/name.
+          - Remove local JWT decode logic.
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/api/deps.py</File>
+        </Files>
+        <CodeSnippet lang="python" file="deps.py">
+async def get_current_user(
+    session: SessionDep,
+    token: str = Depends(oauth2_scheme),
+) -> User:
+    try:
+        payload = verify_clerk_token(token)
+        clerk_id = payload.get("sub")
+        if not clerk_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # Look up or create user
+        user = session.exec(
+            select(User).where(User.clerk_id == clerk_id)
+        ).first()
+
+        if not user:
+            # Sync user from Clerk (create local record)
+            user = User(
+                clerk_id=clerk_id,
+                email=payload.get("email", ""),
+                provider=AuthProvider.CLERK,
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+
+        return user
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+        </CodeSnippet>
+      </Step>
+
+      <Step order="5" type="Backend Cleanup">
+        <Action>Remove Deprecated Endpoints.</Action>
+        <Details>
+          - Remove `POST /login/access-token` (Clerk handles authentication).
+          - Remove `POST /users/` registration endpoint (Clerk handles signup).
+          - Remove `GET /dev-token` endpoint (use Clerk dev mode instead).
+          - Keep `GET /me` endpoint for profile data.
+          - Update router.py to remove deprecated routes.
+          - Add `CLERK` to AuthProvider enum if not present.
+        </Details>
+        <Files>
+          <File action="update">apps/api/app/api/v1/endpoints/login.py</File>
+          <File action="update">apps/api/app/api/v1/endpoints/users.py</File>
+          <File action="update">apps/api/app/api/v1/router.py</File>
+          <File action="update">apps/api/app/models/enums.py</File>
+        </Files>
+      </Step>
+
+      <!-- FRONTEND STEPS -->
+
+      <Step order="6" type="Frontend Setup">
+        <Action>Install and Configure Clerk.</Action>
+        <Details>
+          - Install `@clerk/nextjs@latest` package.
+          - Add environment variables to `.env.local` (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY).
+          - Wrap app in `ClerkProvider` in root `layout.tsx`.
+          - Add Clerk components (SignedIn, SignedOut, UserButton, SignInButton, SignUpButton) to header.
+        </Details>
+        <Files>
+          <File action="update">apps/web/package.json</File>
+          <File action="update">apps/web/src/app/layout.tsx</File>
+          <File action="create">apps/web/.env.local</File>
+        </Files>
+        <CodeSnippet lang="tsx" file="layout.tsx">
+import {
+  ClerkProvider,
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from "@clerk/nextjs";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    &lt;ClerkProvider&gt;
+      &lt;html lang="en"&gt;
+        &lt;body&gt;
+          &lt;header&gt;
+            &lt;SignedOut&gt;
+              &lt;SignInButton /&gt;
+              &lt;SignUpButton /&gt;
+            &lt;/SignedOut&gt;
+            &lt;SignedIn&gt;
+              &lt;UserButton /&gt;
+            &lt;/SignedIn&gt;
+          &lt;/header&gt;
+          {children}
+        &lt;/body&gt;
+      &lt;/html&gt;
+    &lt;/ClerkProvider&gt;
+  )
+}
+        </CodeSnippet>
+      </Step>
+
+      <Step order="7" type="Frontend Logic">
+        <Action>Create Next.js Proxy Middleware.</Action>
+        <Details>
+          - Create `proxy.ts` at `apps/web/src/proxy.ts`.
+          - Use Clerk's `clerkMiddleware()` from `@clerk/nextjs/server`.
+          - This handles session management automatically.
+          - Route protection will be handled via Clerk components in layouts.
+        </Details>
+        <Files>
+          <File action="create">apps/web/src/proxy.ts</File>
+        </Files>
+        <CodeSnippet lang="typescript" file="proxy.ts">
+import { clerkMiddleware } from "@clerk/nextjs/server";
+
+export default clerkMiddleware();
+
+export const config = {
+  matcher: [
+    // Skip Next.js internals and all static files, unless found in search params
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Always run for API routes
+    "/(api|trpc)(.*)",
+  ],
+};
+        </CodeSnippet>
+      </Step>
+
+      <Step order="8" type="Frontend Logic">
+        <Action>Update API Client for Clerk Tokens.</Action>
+        <Details>
+          - Update `api-client.ts` to use Clerk's `getToken()`.
+          - Create a wrapper function that gets token from Clerk session.
+          - Note: `getToken()` is async, so interceptor pattern changes.
+          - Use `getToken({ template: 'fastapi' })` for custom JWT template.
+          - Remove localStorage token logic.
+        </Details>
+        <Files>
+          <File action="update">apps/web/src/lib/api-client.ts</File>
+        </Files>
+        <CodeSnippet lang="typescript" file="api-client.ts">
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1',
+})
+
+// Token will be set by the calling component using Clerk's useAuth()
+export const setAuthToken = (token: string | null) => {
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+  } else {
+    delete api.defaults.headers.common['Authorization']
+  }
+}
+
+export default api
+        </CodeSnippet>
+      </Step>
+
+      <Step order="9" type="Frontend UI">
+        <Action>Replace Auth Pages with Clerk Components.</Action>
+        <Details>
+          - Replace login page content with `SignIn` component from `@clerk/nextjs`.
+          - Replace signup page content with `SignUp` component from `@clerk/nextjs`.
+          - Center components using flex container.
+          - Configure redirect URLs via env vars (NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL, etc.).
+        </Details>
+        <Files>
+          <File action="update">apps/web/src/app/(auth)/login/page.tsx</File>
+          <File action="update">apps/web/src/app/(auth)/signup/page.tsx</File>
+        </Files>
+        <CodeSnippet lang="tsx" file="login/page.tsx">
+import { SignIn } from "@clerk/nextjs";
+
+export default function LoginPage() {
+  return (
+    &lt;div className="flex min-h-screen items-center justify-center"&gt;
+      &lt;SignIn /&gt;
+    &lt;/div&gt;
+  );
+}
+        </CodeSnippet>
+      </Step>
+
+      <Step order="10" type="Frontend Cleanup">
+        <Action>Update Dashboard Layout and Remove AuthContext.</Action>
+        <Details>
+          - Delete `AuthContext.tsx` (no longer needed).
+          - Update dashboard layout to remove `useAuth()` hook.
+          - Middleware handles protection, so layout just renders children.
+          - Optionally use `UserButton` in header for user menu.
+          - Remove any components that import from AuthContext.
+        </Details>
+        <Files>
+          <File action="delete">apps/web/src/context/AuthContext.tsx</File>
+          <File action="update">apps/web/src/app/(dashboard)/layout.tsx</File>
+          <File action="update">apps/web/src/components/Header.tsx</File>
+        </Files>
+      </Step>
+    </Steps>
+
+    <Verification status="planned">
+      <Test type="Manual">
+        <Step order="1">Start backend: `uvicorn app.main:app --reload`</Step>
+        <Step order="2">Start frontend: `pnpm dev`</Step>
+        <Step order="3">Navigate to `/login` - verify Clerk SignIn UI loads.</Step>
+        <Step order="4">Sign up a new user via Clerk.</Step>
+        <Step order="5">Check automatic redirection to `/dashboard`.</Step>
+        <Step order="6">Open DevTools Network tab.</Step>
+        <Step order="7">Trigger an API call (e.g., load interviewers list).</Step>
+        <Step order="8">Verify `Authorization: Bearer token` header is sent.</Step>
+        <Step order="9">Verify backend returns 200 OK.</Step>
+        <Step order="10">Check database - new User record created with clerk_id.</Step>
+        <Step order="11">Sign out via Clerk UserButton.</Step>
+        <Step order="12">Try accessing `/dashboard` directly - should redirect to `/login`.</Step>
+        <Step order="13">Test invalid token: modify token in request - should get 401.</Step>
+      </Test>
+      <Test type="Automated">
+        <Step>Update backend tests to mock Clerk token verification.</Step>
+        <Step>Add test for user sync (first API call creates User).</Step>
+        <Step>Add test for invalid token rejection.</Step>
+      </Test>
+    </Verification>
+
+    <Rollback>
+      <Step>Revert Alembic migration: `alembic downgrade -1`</Step>
+      <Step>Restore AuthContext.tsx from git.</Step>
+      <Step>Restore original login.py and users.py endpoints.</Step>
+      <Step>Remove @clerk/nextjs from package.json.</Step>
+      <Step>Delete proxy.ts.</Step>
+      <Step>Restore original api-client.ts and layout.tsx.</Step>
+    </Rollback>
+  </Phase>
+</Roadmap>

@@ -15,6 +15,7 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
 
     id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True)
+    clerk_id: Optional[str] = Field(default=None, unique=True, index=True)
     provider: AuthProvider = Field(index=True)
     email: str = Field(index=True, unique=True)
     hashed_password: Optional[str] = Field(default=None)

@@ -9,6 +9,7 @@ class AuthProvider(str, Enum):
     LOCAL = "local"
     GITHUB = "github"
     LINKEDIN = "linkedin"
+    CLERK = "clerk"
 
 
 class ProfileStatus(str, Enum):

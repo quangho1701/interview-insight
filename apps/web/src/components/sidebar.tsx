@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Upload, Users, LogOut } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { LayoutDashboard, Upload, LogOut } from "lucide-react";
+import { SignOutButton } from "@clerk/nextjs";
 import { Button } from "@vibecheck/ui";
 
 const routes = [
@@ -20,17 +20,10 @@ const routes = [
         href: "/upload",
         color: "text-violet-500",
     },
-    // {
-    //   label: "Interviewers",
-    //   icon: Users,
-    //   href: "/interviewers",
-    //   color: "text-pink-700",
-    // },
 ];
 
 export function Sidebar() {
     const pathname = usePathname();
-    const { logout } = useAuth();
 
     return (
         <div className="space-y-4 py-4 flex flex-col h-full bg-[#111827] text-white">
@@ -59,10 +52,12 @@ export function Sidebar() {
                 </div>
             </div>
             <div className="px-3 py-2">
-                <Button onClick={logout} variant="destructive" className="w-full justify-start pl-3 text-zinc-400 hover:text-white hover:bg-red-500/10">
-                    <LogOut className="h-5 w-5 mr-3 text-red-500" />
-                    Logout
-                </Button>
+                <SignOutButton>
+                    <Button variant="destructive" className="w-full justify-start pl-3 text-zinc-400 hover:text-white hover:bg-red-500/10">
+                        <LogOut className="h-5 w-5 mr-3 text-red-500" />
+                        Logout
+                    </Button>
+                </SignOutButton>
             </div>
         </div>
     );

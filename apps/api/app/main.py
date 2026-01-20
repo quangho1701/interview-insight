@@ -1,6 +1,10 @@
 """FastAPI application entry point."""
 
 from fastapi import FastAPI
+from app.core.config import get_settings as _get_settings
+
+# Clear cached settings on reload to pick up env changes
+_get_settings.cache_clear()
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router

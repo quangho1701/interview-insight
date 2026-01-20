@@ -35,10 +35,14 @@ class Settings(BaseSettings):
     api_port: int = 8000
     debug: bool = False
 
-    # Authentication settings
+    # Authentication settings (legacy - kept for backward compatibility)
     secret_key: str = "CHANGE-THIS-IN-PRODUCTION"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+
+    # Clerk authentication settings
+    clerk_issuer: str = ""  # e.g., https://your-app.clerk.accounts.dev
+    clerk_jwks_url: str = ""  # e.g., https://your-app.clerk.accounts.dev/.well-known/jwks.json
 
     # AWS S3 settings
     aws_access_key_id: str = ""
@@ -49,13 +53,20 @@ class Settings(BaseSettings):
     # Development settings
     dev_auth_bypass: bool = False
 
+    # Database SSL settings (required for Neon)
+    database_sslmode: str = "require"
+
     @property
     def database_url(self) -> str:
         """Construct PostgreSQL database URL."""
-        return (
+        base_url = (
             f"postgresql://{self.database_user}:{self.database_password}"
             f"@{self.database_host}:{self.database_port}/{self.database_name}"
         )
+        # Add SSL mode for cloud databases like Neon
+        if self.database_sslmode:
+            return f"{base_url}?sslmode={self.database_sslmode}"
+        return base_url
 
     def get_redis_url(self) -> str:
         """Get Redis URL (use redis_url if set, otherwise construct from host/port)."""

@@ -1,5 +1,6 @@
 """Database configuration and session management."""
 
+from functools import lru_cache
 from typing import Generator
 
 from sqlmodel import Session, SQLModel, create_engine
@@ -7,12 +8,17 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.core.config import get_settings
 
 
+@lru_cache
 def get_engine():
-    """Create database engine."""
+    """Create and cache database engine with connection pooling."""
     settings = get_settings()
     engine = create_engine(
         settings.database_url,
         echo=settings.debug,
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=3600,
+        pool_pre_ping=True,
     )
     return engine
 
