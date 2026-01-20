@@ -53,6 +53,13 @@ export default function UploadPage() {
         console.log("Creating interviewer with payload:", { name: trimmedName });
         try {
             const token = await getToken();
+
+            if (!token) {
+                console.error("No authentication token available");
+                alert("Authentication error. Please sign in again.");
+                return;
+            }
+
             const { data } = await apiWithAuth(token).post("/interviewers", { name: trimmedName });
             setInterviewers([...interviewers, data]);
             setSelectedInterviewer(data.id);
@@ -60,12 +67,25 @@ export default function UploadPage() {
             setNewInterviewerName("");
         } catch (error: any) {
             console.error("Failed to create interviewer", error);
+
+            // Check for network error (no response received)
+            if (!error.response) {
+                alert("Cannot connect to server. Please ensure the backend is running on http://localhost:8000");
+                return;
+            }
+
+            // Check for authentication error
+            if (error.response?.status === 401) {
+                alert("Authentication failed. Please sign in again.");
+                return;
+            }
+
             const detail = error.response?.data?.detail;
             const errorMessage = typeof detail === 'string'
                 ? detail
                 : Array.isArray(detail)
                     ? detail.map((e: any) => e.msg).join(', ')
-                    : "Failed to create interviewer";
+                    : `Server error (${error.response?.status || 'Unknown'}). Check console for details.`;
             alert(errorMessage);
         }
     };
@@ -83,7 +103,7 @@ export default function UploadPage() {
                 content_type: file.type,
             });
 
-            const { url, fields, job_id } = presignedData;
+            const { upload_url: url, fields, job_id } = presignedData;
 
             // 2. Upload to S3
             // We need to construct FormData based on 'fields' if it's a POST, or just put if it's a PUT.

@@ -21,7 +21,28 @@
       "Bash(python -m alembic:*)",
       "Bash(ls:*)",
       "Bash(git -C \"d:\\\\Interview Insights App\" diff HEAD~1 -- apps/web/src/middleware.ts)",
-      "Bash(netstat:*)"
+      "Bash(netstat:*)",
+      "Bash(exit 0)",
+      "Bash(claude mcp add TestSprite --env API_KEY=sk-user-VEeNrUBJbGkgVnFIa8dd11_NgMb1-Rsh3fBRjf394EeN4mTAVPrb_Ux5FyGafut0vmcorzn7SRrsny1MKvnZXfkNkjM4A44ILBJUIeuVVeQuQdIYnnrZoVU6eymHwTW8fLk -- npx @testsprite/testsprite-mcp@latest)",
+      "Bash(where:*)",
+      "Bash(set CLAUDE_CODE_GIT_BASH_PATH=C:Gitusrbinbash.exe)",
+      "Bash(setx CLAUDE_CODE_GIT_BASH_PATH \"C:\\\\Git\\\\usr\\\\bin\\\\bash.exe\")",
+      "Bash(setx:*)",
+      "Bash(pnpm --filter web dev:*)",
+      "Bash(reg delete \"HKCU\\\\Environment\" /v CLAUDE_CODE_GIT_BASH_PATH /f)",
+      "Bash(type \"d:\\\\Interview Insights App\\\\apps\\\\web\\\\src\\\\app\\\\\\(dashboard\\)\\\\upload\\\\page.tsx\")",
+      "Bash(cat:*)"
     ]
+  },
+  "mcpServers": {
+    "TestSprite": {
+      "command": "npx",
+      "args": [
+        "@testsprite/testsprite-mcp@latest"
+      ],
+      "env": {
+        "API_KEY": "sk-user-VEeNrUBJbGkgVnFIa8dd11_NgMb1-Rsh3fBRjf394EeN4mTAVPrb_Ux5FyGafut0vmcorzn7SRrsny1MKvnZXfkNkjM4A44ILBJUIeuVVeQuQdIYnnrZoVU6eymHwTW8fLk"
+      }
+    }
   }
 }
