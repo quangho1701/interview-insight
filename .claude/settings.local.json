@@ -20,7 +20,8 @@
       "Bash(alembic upgrade:*)",
       "Bash(python -m alembic:*)",
       "Bash(ls:*)",
-      "Bash(git -C \"d:\\\\Interview Insights App\" diff HEAD~1 -- apps/web/src/middleware.ts)"
+      "Bash(git -C \"d:\\\\Interview Insights App\" diff HEAD~1 -- apps/web/src/middleware.ts)",
+      "Bash(netstat:*)"
     ]
   }
 }
