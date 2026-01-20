@@ -58,8 +58,8 @@ def get_current_user(
     """
     settings = get_settings()
 
-    # Dev bypass: return guest user when no token provided
-    if settings.dev_auth_bypass and token is None:
+    # Dev bypass: return guest user regardless of token
+    if settings.dev_auth_bypass:
         return get_or_create_guest_user(session)
 
     credentials_exception = HTTPException(
