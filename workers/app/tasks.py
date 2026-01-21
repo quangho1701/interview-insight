@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlmodel import text
 
 from app.core.database import get_session
@@ -18,6 +19,9 @@ from app.services.summarization import SummarizationService
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Transient errors that should trigger retries (keep PROCESSING status)
+TRANSIENT_ERRORS = (ConnectionError, TimeoutError, OSError)
 
 # Lazy-initialized service instances (loaded once per worker)
 _transcription_service: TranscriptionService | None = None
@@ -57,6 +61,28 @@ class JobStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+def _update_job_failed(job_id: str, error_message: str) -> None:
+    """Update job status to FAILED with error message."""
+    try:
+        with get_session() as session:
+            session.execute(
+                text("""
+                    UPDATE processing_jobs
+                    SET status = :status, error_message = :error, updated_at = :updated_at
+                    WHERE id = :job_id
+                """),
+                {
+                    "status": JobStatus.FAILED.value,
+                    "error": error_message[:500],
+                    "updated_at": datetime.now(timezone.utc),
+                    "job_id": job_id,
+                },
+            )
+            session.commit()
+    except Exception as db_exc:
+        logger.error(f"Failed to update job status: {db_exc}")
 
 
 @celery_app.task(
@@ -143,7 +169,7 @@ def process_interview(self, job_id: str) -> dict:
         summary = summarization_service.summarize(transcript)
         logger.info("Summarization complete")
 
-        # Step 4: Create InterviewAnalysis record
+        # Step 4: Create InterviewAnalysis record (idempotent via job_id)
         analysis_id = str(uuid4())
         metrics_json = {
             "executive_summary": summary["executive_summary"],
@@ -156,21 +182,36 @@ def process_interview(self, job_id: str) -> dict:
             session.execute(
                 text("""
                     INSERT INTO interview_analyses
-                    (id, user_id, interviewer_id, sentiment_score, metrics_json, transcript_redacted, created_at, updated_at)
-                    VALUES (:id, :user_id, :interviewer_id, :sentiment_score, :metrics_json, :transcript, :now, :now)
+                    (id, job_id, user_id, interviewer_id, sentiment_score, summary, metrics_json, transcript_redacted, created_at, updated_at)
+                    VALUES (:id, :job_id, :user_id, :interviewer_id, :sentiment_score, :summary, :metrics_json, :transcript, :now, :now)
+                    ON CONFLICT (job_id) DO UPDATE SET
+                        sentiment_score = EXCLUDED.sentiment_score,
+                        summary = EXCLUDED.summary,
+                        metrics_json = EXCLUDED.metrics_json,
+                        transcript_redacted = EXCLUDED.transcript_redacted,
+                        updated_at = EXCLUDED.updated_at
                 """),
                 {
                     "id": analysis_id,
+                    "job_id": job_id,
                     "user_id": str(user_id),
                     "interviewer_id": str(interviewer_id),
                     "sentiment_score": summary["sentiment_score"],
+                    "summary": summary["executive_summary"],
                     "metrics_json": json.dumps(metrics_json),
                     "transcript": transcript,
                     "now": datetime.now(timezone.utc),
                 },
             )
             session.commit()
-            logger.info(f"Created InterviewAnalysis: {analysis_id}")
+
+            # Get the actual analysis_id (might be existing on conflict)
+            result = session.execute(
+                text("SELECT id FROM interview_analyses WHERE job_id = :job_id"),
+                {"job_id": job_id},
+            )
+            analysis_id = str(result.scalar())
+            logger.info(f"Created/updated InterviewAnalysis: {analysis_id}")
 
         # Step 5: Update job with analysis_id and mark COMPLETED
         with get_session() as session:
@@ -192,31 +233,27 @@ def process_interview(self, job_id: str) -> dict:
 
         return {"status": "completed", "job_id": job_id, "analysis_id": analysis_id}
 
-    except Exception as exc:
-        logger.error(f"Job {job_id} failed with error: {exc}")
+    except SoftTimeLimitExceeded:
+        # Task timed out - permanent failure, do not retry
+        logger.error(f"Job {job_id} timed out (soft time limit exceeded)")
+        _update_job_failed(job_id, "Processing timed out after 55 minutes")
+        return {"status": "failed", "job_id": job_id, "error": "timeout"}
 
-        # Update job to FAILED status
-        try:
-            with get_session() as session:
-                session.execute(
-                    text("""
-                        UPDATE processing_jobs
-                        SET status = :status, error_message = :error, updated_at = :updated_at
-                        WHERE id = :job_id
-                    """),
-                    {
-                        "status": JobStatus.FAILED.value,
-                        "error": str(exc)[:500],  # Truncate error message
-                        "updated_at": datetime.now(timezone.utc),
-                        "job_id": job_id,
-                    },
-                )
-                session.commit()
-        except Exception as db_exc:
-            logger.error(f"Failed to update job status: {db_exc}")
-
-        # Re-raise for Celery retry mechanism
+    except TRANSIENT_ERRORS as exc:
+        # Transient error - keep PROCESSING status and retry
+        logger.warning(
+            f"Job {job_id} encountered transient error: {exc}. "
+            f"Retry {self.request.retries + 1}/{self.max_retries}"
+        )
+        # Do NOT update status to FAILED - keep as PROCESSING for retry
         raise self.retry(exc=exc)
+
+    except Exception as exc:
+        # Permanent error - mark as FAILED, do not retry
+        logger.error(f"Job {job_id} failed with permanent error: {exc}")
+        _update_job_failed(job_id, str(exc))
+        # Do not retry permanent errors
+        return {"status": "failed", "job_id": job_id, "error": str(exc)}
 
     finally:
         # Cleanup temp file

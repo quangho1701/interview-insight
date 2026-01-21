@@ -1,0 +1,585 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bug_fix_plan>
+    <title>ML Worker Bug Fixes Implementation Plan</title>
+    <date>2026-01-21</date>
+    <status>Ready for Implementation</status>
+    <description>
+        Comprehensive fix plan for all bugs discovered in the Celery ML worker pipeline.
+        These bugs affect file upload processing, task status tracking, and data integrity.
+    </description>
+
+    <bugs>
+        <!-- BUG 1: SSL Configuration (Already Fixed, Needs Commit) -->
+        <bug id="1" severity="CRITICAL" status="FIXED_UNCOMMITTED">
+            <name>Redis SSL Configuration Missing</name>
+            <symptom>
+                File upload shows "Upload failed" after reaching 100%. The Celery task
+                enqueue hangs/times out when connecting to Upstash Redis (rediss://).
+            </symptom>
+            <root_cause>
+                Celery was not configured with SSL settings for the Redis broker.
+                The API uses Upstash Redis with SSL (rediss:// protocol) but Celery
+                didn't know how to establish the SSL connection.
+            </root_cause>
+            <location>
+                <file>apps/api/app/core/celery_utils.py</file>
+                <lines>30-35</lines>
+            </location>
+            <fix_applied>
+                <![CDATA[
+# Configure SSL for Redis if using rediss://
+if settings.get_redis_url().startswith("rediss://"):
+    celery_app.conf.update(
+        broker_use_ssl={"ssl_cert_reqs": ssl.CERT_NONE},
+        redis_backend_use_ssl={"ssl_cert_reqs": ssl.CERT_NONE},
+    )
+                ]]>
+            </fix_applied>
+            <action>
+                Commit the existing changes to celery_utils.py and config.py.
+            </action>
+            <verification>
+                <step>Run: python -c "from app.core.celery_utils import celery_app; print(celery_app.conf.broker_use_ssl)"</step>
+                <expected>{'ssl_cert_reqs': &lt;VerifyMode.CERT_NONE: 0&gt;}</expected>
+            </verification>
+        </bug>
+
+        <!-- BUG 2: Retry Logic Breaks Status Updates -->
+        <bug id="2" severity="CRITICAL" status="NOT_FIXED">
+            <name>Retry Logic Causes Status Flip-Flop</name>
+            <symptom>
+                Job status oscillates between FAILED and PROCESSING during retries.
+                Users see inconsistent status in the dashboard. Jobs never properly
+                reach a terminal FAILED state until all retries are exhausted.
+            </symptom>
+            <root_cause>
+                The exception handler updates status to FAILED, then unconditionally
+                calls self.retry(). On retry, the task sets status back to PROCESSING.
+                This creates a confusing state machine where FAILED is not terminal.
+            </root_cause>
+            <location>
+                <file>workers/app/tasks.py</file>
+                <lines>195-219</lines>
+            </location>
+            <current_code>
+                <![CDATA[
+except Exception as exc:
+    logger.error(f"Job {job_id} failed with error: {exc}")
+
+    # Update job to FAILED status
+    try:
+        with get_session() as session:
+            session.execute(
+                text("""
+                    UPDATE processing_jobs
+                    SET status = :status, error_message = :error, updated_at = :updated_at
+                    WHERE id = :job_id
+                """),
+                {
+                    "status": JobStatus.FAILED.value,
+                    "error": str(exc)[:500],
+                    "job_id": job_id,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+            )
+            session.commit()
+    except Exception as db_exc:
+        logger.error(f"Failed to update job status: {db_exc}")
+
+    # Re-raise for Celery retry mechanism
+    raise self.retry(exc=exc)
+                ]]>
+            </current_code>
+            <fix>
+                <approach>
+                    1. Define which errors are transient (retryable) vs permanent.
+                    2. Only retry for transient errors (network issues, temporary S3 failures).
+                    3. For permanent errors (invalid file, processing errors), mark as FAILED and don't retry.
+                    4. Track retry count and only mark FAILED on final attempt.
+                </approach>
+                <new_code>
+                    <![CDATA[
+# Define transient errors that should be retried
+TRANSIENT_ERRORS = (
+    ConnectionError,
+    TimeoutError,
+    OSError,  # Network-related OS errors
+)
+
+# In the exception handler:
+except TRANSIENT_ERRORS as exc:
+    # Transient error - retry without marking as FAILED yet
+    logger.warning(f"Job {job_id} hit transient error (attempt {self.request.retries + 1}/{self.max_retries}): {exc}")
+
+    if self.request.retries >= self.max_retries:
+        # Final retry exhausted - mark as permanently failed
+        _update_job_failed(job_id, f"Max retries exceeded: {exc}")
+        raise  # Don't retry, let Celery mark as failed
+
+    raise self.retry(exc=exc)
+
+except Exception as exc:
+    # Permanent error - don't retry, mark as FAILED immediately
+    logger.error(f"Job {job_id} failed permanently: {exc}")
+    _update_job_failed(job_id, str(exc)[:500])
+    raise  # Propagate to Celery without retry
+
+
+def _update_job_failed(job_id: str, error_message: str):
+    """Helper to update job status to FAILED."""
+    try:
+        with get_session() as session:
+            session.execute(
+                text("""
+                    UPDATE processing_jobs
+                    SET status = :status, error_message = :error, updated_at = :updated_at
+                    WHERE id = :job_id
+                """),
+                {
+                    "status": JobStatus.FAILED.value,
+                    "error": error_message,
+                    "job_id": job_id,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+            )
+            session.commit()
+    except Exception as db_exc:
+        logger.error(f"Failed to update job status: {db_exc}")
+                    ]]>
+                </new_code>
+            </fix>
+            <verification>
+                <step>Simulate a permanent error (e.g., invalid audio file)</step>
+                <expected>Job goes to FAILED and stays FAILED (no retry)</expected>
+                <step>Simulate a transient error (e.g., mock S3 timeout)</step>
+                <expected>Job retries up to 3 times, then goes to FAILED</expected>
+            </verification>
+        </bug>
+
+        <!-- BUG 3: No Task Timeout -->
+        <bug id="3" severity="HIGH" status="NOT_FIXED">
+            <name>No Task Timeout Configuration</name>
+            <symptom>
+                Tasks can run indefinitely. If Whisper transcription hangs on a
+                corrupted file, or the LLM inference stalls, the job stays in
+                PROCESSING state forever with no way to recover.
+            </symptom>
+            <root_cause>
+                No task_time_limit or task_soft_time_limit configured in Celery.
+            </root_cause>
+            <location>
+                <file>workers/app/main.py</file>
+                <lines>21-31</lines>
+            </location>
+            <current_code>
+                <![CDATA[
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    result_expires=86400,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+)
+                ]]>
+            </current_code>
+            <fix>
+                <approach>
+                    Add timeout configuration. Use soft timeout to gracefully handle
+                    long-running tasks, and hard timeout as a safety net.
+                </approach>
+                <new_code>
+                    <![CDATA[
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    result_expires=86400,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    # Timeout configuration
+    task_time_limit=3600,        # Hard kill after 1 hour
+    task_soft_time_limit=3300,   # Raise SoftTimeLimitExceeded after 55 min
+    task_track_started=True,     # Track when task starts processing
+)
+                    ]]>
+                </new_code>
+                <additional_change>
+                    <file>workers/app/tasks.py</file>
+                    <description>Handle SoftTimeLimitExceeded in the task</description>
+                    <code>
+                        <![CDATA[
+from celery.exceptions import SoftTimeLimitExceeded
+
+@celery_app.task(...)
+def process_interview(self, job_id: str) -> dict:
+    try:
+        # ... existing code ...
+    except SoftTimeLimitExceeded:
+        logger.error(f"Job {job_id} exceeded time limit")
+        _update_job_failed(job_id, "Processing timeout - audio file may be too long")
+        raise
+                        ]]>
+                    </code>
+                </additional_change>
+            </fix>
+            <verification>
+                <step>Check Celery config: celery_app.conf.task_time_limit</step>
+                <expected>3600</expected>
+            </verification>
+        </bug>
+
+        <!-- BUG 4: Summary Column Not Written -->
+        <bug id="4" severity="HIGH" status="NOT_FIXED">
+            <name>Summary Column Never Populated</name>
+            <symptom>
+                API always returns "summary": null in AnalysisRead responses,
+                even though the executive_summary exists in metrics_json.
+                Frontend cannot display the summary properly.
+            </symptom>
+            <root_cause>
+                The INSERT statement in the task writes to metrics_json but
+                does not include the summary column. The InterviewAnalysis model
+                has a summary field (added in migration 004) but it's never populated.
+            </root_cause>
+            <location>
+                <file>workers/app/tasks.py</file>
+                <lines>157-173</lines>
+            </location>
+            <current_code>
+                <![CDATA[
+session.execute(
+    text("""
+        INSERT INTO interview_analyses
+        (id, user_id, interviewer_id, sentiment_score, metrics_json, transcript_redacted, created_at, updated_at)
+        VALUES (:id, :user_id, :interviewer_id, :sentiment_score, :metrics_json, :transcript, :now, :now)
+    """),
+    {
+        "id": analysis_id,
+        "user_id": str(user_id),
+        "interviewer_id": str(interviewer_id),
+        "sentiment_score": summary["sentiment_score"],
+        "metrics_json": json.dumps(metrics_json),
+        "transcript": transcript,
+        "now": datetime.now(timezone.utc),
+    },
+)
+                ]]>
+            </current_code>
+            <fix>
+                <approach>
+                    Add the summary column to the INSERT statement and populate it
+                    with the executive_summary value.
+                </approach>
+                <new_code>
+                    <![CDATA[
+# Extract the executive summary for the dedicated column
+executive_summary = summary["executive_summary"]
+
+session.execute(
+    text("""
+        INSERT INTO interview_analyses
+        (id, user_id, interviewer_id, sentiment_score, summary, metrics_json, transcript_redacted, created_at, updated_at)
+        VALUES (:id, :user_id, :interviewer_id, :sentiment_score, :summary, :metrics_json, :transcript, :now, :now)
+    """),
+    {
+        "id": analysis_id,
+        "user_id": str(user_id),
+        "interviewer_id": str(interviewer_id),
+        "sentiment_score": summary["sentiment_score"],
+        "summary": executive_summary,  # NEW: Write to summary column
+        "metrics_json": json.dumps(metrics_json),
+        "transcript": transcript,
+        "now": datetime.now(timezone.utc),
+    },
+)
+                    ]]>
+                </new_code>
+            </fix>
+            <verification>
+                <step>Process an interview and query the database</step>
+                <command>SELECT id, summary FROM interview_analyses ORDER BY created_at DESC LIMIT 1;</command>
+                <expected>summary column contains the executive summary text (not NULL)</expected>
+            </verification>
+        </bug>
+
+        <!-- BUG 5: No Idempotency -->
+        <bug id="5" severity="MEDIUM" status="NOT_FIXED">
+            <name>Duplicate Analysis Records on Retry</name>
+            <symptom>
+                If a task fails after creating the InterviewAnalysis record and
+                then retries, a new record is created with a new UUID. This results
+                in multiple analysis records for the same job, causing data integrity
+                issues and potential duplicate displays in the frontend.
+            </symptom>
+            <root_cause>
+                The task generates a new analysis_id (uuid4()) on each execution.
+                There's no check for existing analysis records and no idempotency key.
+            </root_cause>
+            <location>
+                <file>workers/app/tasks.py</file>
+                <lines>146-173</lines>
+            </location>
+            <current_code>
+                <![CDATA[
+analysis_id = str(uuid4())  # New UUID every time
+# ... INSERT INTO interview_analyses ...
+                ]]>
+            </current_code>
+            <fix>
+                <approach>
+                    Option A: Add a job_id foreign key to interview_analyses and use
+                    ON CONFLICT DO UPDATE (upsert pattern).
+
+                    Option B: Check for existing analysis before insert and skip if exists.
+
+                    Option A is cleaner but requires a migration. Option B is a quick fix.
+                </approach>
+                <option_a>
+                    <description>Add job_id column and use upsert (recommended)</description>
+                    <migration>
+                        <![CDATA[
+-- Migration: Add job_id to interview_analyses
+ALTER TABLE interview_analyses ADD COLUMN job_id UUID REFERENCES processing_jobs(id);
+CREATE UNIQUE INDEX idx_interview_analyses_job_id ON interview_analyses(job_id);
+                        ]]>
+                    </migration>
+                    <task_code>
+                        <![CDATA[
+session.execute(
+    text("""
+        INSERT INTO interview_analyses
+        (id, job_id, user_id, interviewer_id, sentiment_score, summary, metrics_json, transcript_redacted, created_at, updated_at)
+        VALUES (:id, :job_id, :user_id, :interviewer_id, :sentiment_score, :summary, :metrics_json, :transcript, :now, :now)
+        ON CONFLICT (job_id) DO UPDATE SET
+            sentiment_score = EXCLUDED.sentiment_score,
+            summary = EXCLUDED.summary,
+            metrics_json = EXCLUDED.metrics_json,
+            transcript_redacted = EXCLUDED.transcript_redacted,
+            updated_at = EXCLUDED.updated_at
+    """),
+    {
+        "id": str(uuid4()),
+        "job_id": job_id,  # Link to processing job
+        # ... rest of params
+    },
+)
+                        ]]>
+                    </task_code>
+                </option_a>
+                <option_b>
+                    <description>Check before insert (quick fix, no migration)</description>
+                    <task_code>
+                        <![CDATA[
+# Check if analysis already exists for this job's interviewer and user
+existing = session.execute(
+    text("""
+        SELECT id FROM interview_analyses
+        WHERE user_id = :user_id AND interviewer_id = :interviewer_id
+        AND created_at > NOW() - INTERVAL '1 hour'
+        ORDER BY created_at DESC LIMIT 1
+    """),
+    {"user_id": str(user_id), "interviewer_id": str(interviewer_id)}
+).fetchone()
+
+if existing:
+    logger.info(f"Analysis already exists for job {job_id}, updating instead")
+    session.execute(
+        text("""
+            UPDATE interview_analyses SET
+                sentiment_score = :sentiment_score,
+                summary = :summary,
+                metrics_json = :metrics_json,
+                transcript_redacted = :transcript,
+                updated_at = :now
+            WHERE id = :id
+        """),
+        {"id": existing[0], ...}
+    )
+else:
+    session.execute(text("INSERT INTO interview_analyses ..."), {...})
+                        ]]>
+                    </task_code>
+                </option_b>
+            </fix>
+            <verification>
+                <step>Manually trigger a retry of a completed task</step>
+                <command>SELECT COUNT(*) FROM interview_analyses WHERE interviewer_id = '...';</command>
+                <expected>Count should be 1, not increasing with retries</expected>
+            </verification>
+        </bug>
+
+        <!-- BUG 6: QUEUED Jobs Can Get Stuck -->
+        <bug id="6" severity="MEDIUM" status="NOT_FIXED">
+            <name>Jobs Stuck in QUEUED State</name>
+            <symptom>
+                If the Celery task enqueue fails AND the compensating database
+                update also fails, the job remains in QUEUED state forever with
+                no worker picking it up.
+            </symptom>
+            <root_cause>
+                The confirm endpoint commits QUEUED status before attempting to
+                enqueue. If enqueue fails and the status revert also fails (e.g.,
+                database connection lost), the job is orphaned.
+            </root_cause>
+            <location>
+                <file>apps/api/app/api/v1/endpoints/uploads.py</file>
+                <lines>92-116</lines>
+            </location>
+            <current_code>
+                <![CDATA[
+job.status = JobStatus.QUEUED
+job.interviewer_id = request.interviewer_id
+session.add(job)
+session.commit()  # QUEUED committed here
+
+try:
+    enqueue_interview_processing(str(job.id))
+except Exception:
+    # Compensate: revert job status since enqueue failed
+    job.status = JobStatus.FAILED
+    job.error_message = "Failed to queue processing job"
+    session.add(job)
+    session.commit()  # What if THIS fails?
+    raise HTTPException(...)
+                ]]>
+            </current_code>
+            <fix>
+                <approach>
+                    Option A: Use a transaction that only commits after successful enqueue.
+
+                    Option B: Add a background job to retry stuck QUEUED jobs.
+
+                    Option A is cleaner but may have issues with long-running transactions.
+                    Option B is more resilient.
+                </approach>
+                <option_a>
+                    <description>Defer commit until after enqueue succeeds</description>
+                    <code>
+                        <![CDATA[
+# Don't commit QUEUED status until enqueue succeeds
+job.status = JobStatus.QUEUED
+job.interviewer_id = request.interviewer_id
+session.add(job)
+session.flush()  # Send to DB but don't commit
+
+try:
+    task_id = enqueue_interview_processing(str(job.id))
+    session.commit()  # Only commit if enqueue succeeded
+except Exception as e:
+    session.rollback()  # Rollback to PENDING state
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Failed to queue processing job. Please try again.",
+    )
+                        ]]>
+                    </code>
+                </option_a>
+                <option_b>
+                    <description>Add a Celery beat task to retry stuck jobs</description>
+                    <code>
+                        <![CDATA[
+# In workers/app/tasks.py
+@celery_app.task(name="vibecheck.tasks.retry_stuck_jobs")
+def retry_stuck_jobs():
+    """Retry jobs stuck in QUEUED for more than 5 minutes."""
+    with get_session() as session:
+        stuck_jobs = session.execute(
+            text("""
+                SELECT id FROM processing_jobs
+                WHERE status = 'QUEUED'
+                AND updated_at < NOW() - INTERVAL '5 minutes'
+            """)
+        ).fetchall()
+
+        for (job_id,) in stuck_jobs:
+            logger.info(f"Retrying stuck job: {job_id}")
+            process_interview.delay(str(job_id))
+
+# In workers/app/main.py - add beat schedule
+celery_app.conf.beat_schedule = {
+    'retry-stuck-jobs': {
+        'task': 'vibecheck.tasks.retry_stuck_jobs',
+        'schedule': 300.0,  # Every 5 minutes
+    },
+}
+                        ]]>
+                    </code>
+                </option_b>
+            </fix>
+            <verification>
+                <step>Kill Redis connection during enqueue, check job status</step>
+                <expected>Job should not be stuck in QUEUED state</expected>
+            </verification>
+        </bug>
+    </bugs>
+
+    <implementation_order>
+        <phase number="1" name="Commit Existing Fix">
+            <task>Commit the SSL fix in celery_utils.py and config.py</task>
+            <files>
+                <file>apps/api/app/core/celery_utils.py</file>
+                <file>apps/api/app/core/config.py</file>
+            </files>
+        </phase>
+
+        <phase number="2" name="Fix Critical Bugs">
+            <task>Fix retry logic to prevent status flip-flop</task>
+            <task>Add task timeout configuration</task>
+            <files>
+                <file>workers/app/main.py</file>
+                <file>workers/app/tasks.py</file>
+            </files>
+        </phase>
+
+        <phase number="3" name="Fix Data Integrity">
+            <task>Write to summary column in INSERT</task>
+            <task>Add idempotency (Option A with migration preferred)</task>
+            <files>
+                <file>workers/app/tasks.py</file>
+                <file>workers/alembic/versions/xxx_add_job_id_to_analyses.py</file>
+            </files>
+        </phase>
+
+        <phase number="4" name="Add Resilience">
+            <task>Fix QUEUED jobs handling (Option A preferred)</task>
+            <files>
+                <file>apps/api/app/api/v1/endpoints/uploads.py</file>
+            </files>
+        </phase>
+    </implementation_order>
+
+    <testing_checklist>
+        <test name="SSL Fix Verification">
+            <command>cd apps/api &amp;&amp; python -c "from app.core.celery_utils import celery_app; print(celery_app.conf.broker_use_ssl)"</command>
+        </test>
+        <test name="End-to-End Upload">
+            <steps>
+                1. Start API: uvicorn app.main:app --reload
+                2. Start Worker: celery -A app.main worker --loglevel=info -P solo
+                3. Upload a file via Frontend
+                4. Check worker logs for "Task successful"
+                5. Verify job status is COMPLETED in dashboard
+                6. Verify summary field is populated in database
+            </steps>
+        </test>
+        <test name="Retry Behavior">
+            <steps>
+                1. Mock a transient error in S3 download
+                2. Verify job retries and eventually succeeds or fails
+                3. Verify status does not flip-flop
+            </steps>
+        </test>
+        <test name="Timeout Behavior">
+            <steps>
+                1. Upload a very long audio file (or mock slow transcription)
+                2. Verify task times out after soft_time_limit
+                3. Verify job status is FAILED with timeout message
+            </steps>
+        </test>
+    </testing_checklist>
+</bug_fix_plan>

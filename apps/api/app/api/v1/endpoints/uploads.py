@@ -98,18 +98,17 @@ def confirm_upload(
     job.status = JobStatus.QUEUED
     job.interviewer_id = request.interviewer_id
     session.add(job)
-    session.commit()
-    session.refresh(job)
+    session.flush()  # Write to DB but don't commit yet
 
     # Trigger Celery task for async processing
     try:
         enqueue_interview_processing(str(job.id))
-    except Exception:
-        # Compensate: revert job status since enqueue failed
-        job.status = JobStatus.FAILED
-        job.error_message = "Failed to queue processing job"
-        session.add(job)
+        # Enqueue succeeded - commit the QUEUED status
         session.commit()
+        session.refresh(job)
+    except Exception:
+        # Enqueue failed - rollback to keep PENDING status
+        session.rollback()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to queue processing job. Please try again.",

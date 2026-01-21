@@ -24,6 +24,10 @@ celery_app.conf.update(
     # Worker-specific settings
     worker_prefetch_multiplier=1,  # Fair task distribution
     task_acks_late=True,  # Acknowledge after task completion
+    # Timeout settings for long-running ML tasks
+    task_time_limit=3600,  # Hard limit: 60 minutes (kills task)
+    task_soft_time_limit=3300,  # Soft limit: 55 minutes (raises SoftTimeLimitExceeded)
+    task_track_started=True,  # Track task state as STARTED
 )
 
 # Import tasks to register them with Celery

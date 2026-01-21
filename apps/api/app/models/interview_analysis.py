@@ -16,6 +16,7 @@ class InterviewAnalysis(SQLModel, table=True):
     id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", index=True)
     interviewer_id: UUID = Field(foreign_key="interviewers.id", index=True)
+    job_id: Optional[UUID] = Field(default=None, foreign_key="processing_jobs.id", unique=True, index=True)
     sentiment_score: float = Field(ge=-1.0, le=1.0)
     summary: Optional[str] = Field(default=None)
     metrics_json: Optional[dict[str, Any]] = Field(
