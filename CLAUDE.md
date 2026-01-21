@@ -125,7 +125,8 @@ packages/
 - Pydantic Settings with `get_settings()` cached via `@lru_cache`
 - Environment variables loaded from `.env` file (see config.py for all options)
 - Test env uses different ports: DATABASE_PORT=5433, REDIS_PORT=6380
-- Frontend env vars in `apps/web/.env.local`: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_DEV_AUTH_BYPASS`
+- Backend Clerk auth: `CLERK_ISSUER`, `CLERK_JWKS_URL` in `apps/api/.env`
+- Frontend: Clerk env vars per their docs, plus `NEXT_PUBLIC_API_URL` in `apps/web/.env.local`
 
 ### Dev Authentication Bypass
 For local development without OAuth setup:
@@ -150,9 +151,9 @@ For local development without OAuth setup:
 4. Client polls job status via `GET /api/v1/jobs/{job_id}`
 
 ### Background Jobs
-- Celery app configured in `core/celery_utils.py` with Redis broker
-- Task enqueuing via `enqueue_interview_processing(job_id)` function
-- Task name constant: `TASK_PROCESS_INTERVIEW = "vibecheck.tasks.process_interview"`
+- Celery app configured in `workers/app/main.py` with Redis broker
+- Task enqueuing via `enqueue_interview_processing(job_id)` function in API
+- Task name: `vibecheck.tasks.process_interview` (defined in `workers/app/tasks.py`)
 
 ### ML Worker Pipeline
 The worker (`workers/app/tasks.py`) processes interviews through:
@@ -168,8 +169,8 @@ Services are lazy-initialized as singletons per worker process. Install ML depen
 ### Frontend Patterns (apps/web)
 - **Route groups:** `(auth)` for login/signup, `(dashboard)` for protected pages
 - **Public routes:** `interviewers/[id]` page is outside route groups (publicly accessible)
-- **Auth flow:** `AuthContext` provides `useAuth()` hook with `login()`, `logout()`, `isAuthenticated`
-- **API client:** Axios instance at `lib/api-client.ts` with JWT interceptor (reads token from localStorage)
+- **Auth:** Uses Clerk (`@clerk/nextjs`) with `ClerkProvider` wrapping the app. Use Clerk's `useAuth()` hook to get `getToken()` for API calls
+- **API client:** Axios instance at `lib/api-client.ts` with `apiWithAuth(token)` pattern - pass Clerk token to authenticate requests
 - **Data fetching:** TanStack Query (`@tanstack/react-query`) for server state management
 - **Protected routes:** Dashboard layout redirects to `/login` if not authenticated
 

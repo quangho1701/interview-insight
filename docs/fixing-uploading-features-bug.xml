@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bug_report>
+    <title>Upload Feature Failure Investigation</title>
+    <date>2026-01-21</date>
+    <status>Identified</status>
+    
+    <issue_description>
+        Users reported that after uploading a file and clicking "Start Process", the upload reaches 100% but displays "Upload failed. Please try again". However, a queued job still appears in the dashboard.
+    </issue_description>
+
+    <root_cause>
+        <summary>Missing SSL certificate requirements parameter in Redis URL for Celery backend.</summary>
+        <details>
+            The backend uses an SSL-enabled Redis URL (rediss://). The Celery Redis backend implementation strictly requires the 'ssl_cert_reqs' parameter to be present in the URL when using SSL.
+            
+            Sequence of events:
+            1. Job status updates to QUEUED and commits to DB (appearing in dashboard).
+            2. Code attempts to enqueue task to Celery.
+            3. Celery backend initialization fails with "ValueError: A rediss:// URL must have parameter ssl_cert_reqs...".
+            4. API returns 500 Internal Server Error.
+            5. Frontend catches error and displays failure message.
+        </details>
+    </root_cause>
+
+    <verification_findings>
+        <finding>
+            <question>Does the file get uploaded successfully?</question>
+            <answer>Yes. The S3 upload completes successfully before the confirmation endpoint is called.</answer>
+        </finding>
+        <finding>
+            <question>Is the display message wrong?</question>
+            <answer>Technicaly no. The API request to confirm the upload did fail (500 error), but the side effects (upload and db record) partially succeeded.</answer>
+        </finding>
+    </verification_findings>
+
+    <proposed_fix>
+        <option id="1" type="configuration">
+            <description>Update the .env file to include the parameter directly in the REDIS_URL.</description>
+            <example>REDIS_URL=rediss://...:6379?ssl_cert_reqs=CERT_NONE</example>
+        </option>
+        <option id="2" type="code">
+            <description>Update app/core/config.py to automatically append the parameter if missing.</description>
+            <code>
+    def get_redis_url(self) -> str:
+        """Get Redis URL (use redis_url if set, otherwise construct from host/port)."""
+        url = self.redis_url
+        if not url:
+            url = f"redis://{self.redis_host}:{self.redis_port}/0"
+            
+        # Fix for Celery with SSL Redis
+        if "rediss://" in url and "ssl_cert_reqs" not in url:
+            url += "?ssl_cert_reqs=CERT_NONE"
+            
+        return url
+            </code>
+        </option>
+    </proposed_fix>
+</bug_report>

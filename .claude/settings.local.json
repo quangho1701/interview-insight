@@ -31,7 +31,10 @@
       "Bash(pnpm --filter web dev:*)",
       "Bash(reg delete \"HKCU\\\\Environment\" /v CLAUDE_CODE_GIT_BASH_PATH /f)",
       "Bash(type \"d:\\\\Interview Insights App\\\\apps\\\\web\\\\src\\\\app\\\\\\(dashboard\\)\\\\upload\\\\page.tsx\")",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(powershell -Command \"Stop-Process -Id 18256 -Force\")",
+      "Bash(powershell:*)",
+      "Bash(python -m pytest:*)"
     ]
   },
   "mcpServers": {

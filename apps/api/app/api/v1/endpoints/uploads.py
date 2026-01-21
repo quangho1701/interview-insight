@@ -102,6 +102,17 @@ def confirm_upload(
     session.refresh(job)
 
     # Trigger Celery task for async processing
-    enqueue_interview_processing(str(job.id))
+    try:
+        enqueue_interview_processing(str(job.id))
+    except Exception:
+        # Compensate: revert job status since enqueue failed
+        job.status = JobStatus.FAILED
+        job.error_message = "Failed to queue processing job"
+        session.add(job)
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to queue processing job. Please try again.",
+        )
 
     return JobConfirmResponse(job_id=job.id, status=job.status)

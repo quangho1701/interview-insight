@@ -1,6 +1,7 @@
 """S3 service for file upload operations."""
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from app.core.config import Settings
@@ -20,11 +21,14 @@ class S3Service:
 
     def __init__(self, settings: Settings):
         """Initialize S3 client with credentials from settings."""
+        # Use regional endpoint to avoid 307 redirects for non-us-east-1 buckets
         self.client = boto3.client(
             "s3",
             aws_access_key_id=settings.aws_access_key_id,
             aws_secret_access_key=settings.aws_secret_access_key,
             region_name=settings.aws_region,
+            endpoint_url=f"https://s3.{settings.aws_region}.amazonaws.com",
+            config=Config(s3={"addressing_style": "virtual"}),
         )
         self.bucket_name = settings.s3_bucket_name
 

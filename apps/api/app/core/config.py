@@ -70,9 +70,14 @@ class Settings(BaseSettings):
 
     def get_redis_url(self) -> str:
         """Get Redis URL (use redis_url if set, otherwise construct from host/port)."""
-        if self.redis_url:
-            return self.redis_url
-        return f"redis://{self.redis_host}:{self.redis_port}/0"
+        url = self.redis_url if self.redis_url else f"redis://{self.redis_host}:{self.redis_port}/0"
+
+        # Celery requires ssl_cert_reqs parameter for SSL Redis connections
+        if url.startswith("rediss://") and "ssl_cert_reqs" not in url:
+            separator = "&" if "?" in url else "?"
+            url += f"{separator}ssl_cert_reqs=CERT_NONE"
+
+        return url
 
 
 @lru_cache
