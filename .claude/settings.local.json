@@ -34,7 +34,9 @@
       "Bash(cat:*)",
       "Bash(powershell -Command \"Stop-Process -Id 18256 -Force\")",
       "Bash(powershell:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Bash(git -C \"d:\\\\Interview Insights App\" diff HEAD)",
+      "Bash(find:*)"
     ]
   },
   "mcpServers": {

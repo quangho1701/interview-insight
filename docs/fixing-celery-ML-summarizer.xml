@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_plan>
+    <title>Phase 5: ML Summarizer Implementation</title>
+    <date>2026-01-21</date>
+    <status>Planned</status>
+    <description>
+        Detailed implementation plan for the ML Worker service, responsible for processing interview audio files using Celery, Whisper, and Llama 3.
+    </description>
+
+    <prerequisites>
+        <item>Celery Broker (Redis) configured (Completed in Phase 4).</item>
+        <item>S3 Storage configured (Completed in Phase 3).</item>
+        <item>GPU availability is recommended (NVIDIA T4/A10 or local GPU with 12GB+ VRAM). Fallback to CPU is possible but slow.</item>
+    </prerequisites>
+
+    <steps>
+        <step id="1" name="Install Dependencies">
+            <description>Add ML libraries to requirements.txt.</description>
+            <action>
+                <file>apps/api/requirements.txt</file>
+                <add_dependencies>
+                    <dep>faster-whisper>=0.10.0</dep>
+                    <dep>torch>=2.1.0 --index-url https://download.pytorch.org/whl/cu118</dep>
+                    <dep>transformers>=4.36.0</dep>
+                    <dep>accelerate>=0.25.0</dep>
+                    <dep>bitsandbytes>=0.41.0</dep>
+                </add_dependencies>
+                <note>On Windows, torch installation command may differ slightly (check pytorch.org).</note>
+            </action>
+        </step>
+
+        <step id="2" name="Create Worker Entrypoint">
+            <description>Create the main entrypoint for the Celery worker process.</description>
+            <action>
+                <file>apps/api/app/worker.py</file>
+                <code>
+import os
+from app.core.celery_utils import celery_app
+# Import tasks to register them
+from app.tasks import transcription
+
+if __name__ == "__main__":
+    celery_app.start()
+                </code>
+            </action>
+        </step>
+
+        <step id="3" name="Implement ML Service">
+            <description>Create the service class that encapsulates model loading and inference logic.</description>
+            <action>
+                <file>apps/api/app/services/ml_service.py</file>
+                <details>
+                    - Implement a singleton pattern for model loading (load on first use).
+                    - `transcribe_audio(file_path: str) -> str`: Uses faster-whisper.
+                    - `summarize_text(text: str) -> dict`: Uses Llama 3 via transformers pipeline.
+                </details>
+            </action>
+        </step>
+
+        <step id="4" name="Implement Celery Task">
+            <description>Create the task that ties everything together.</description>
+            <action>
+                <file>apps/api/app/tasks/transcription.py</file>
+                <logic>
+                    1. Accept `job_id`.
+                    2. Fetch `ProcessingJob` from DB.
+                    3. Download audio file from S3 to temporary local file.
+                    4. Call `MLService.transcribe_audio()`.
+                    5. Call `MLService.summarize_text()`.
+                    6. Update `ProcessingJob` with transcript, summary, and set status to COMPLETED.
+                    7. Handle exceptions: Update job status to FAILED and save error message.
+                    8. Cleanup temporary file.
+                </logic>
+            </action>
+        </step>
+
+        <step id="5" name="Run the Worker">
+            <description>Command to start the worker.</description>
+            <command>
+                celery -A app.worker.celery_app worker --loglevel=info -P pool_implementation
+            </command>
+            <note>On Windows, use `-P solo` or `-P gevent` to avoid fork issues.</note>
+        </step>
+    </steps>
+
+    <verification>
+        <test_case id="1">
+            <name>End-to-End Upload</name>
+            <steps>
+                1. Start API (`uvicorn app.main:app`).
+                2. Start Worker (`celery ...`).
+                3. Upload a file via Frontend/API.
+                4. Monitor Worker logs for "Received task" and "Task successful".
+                5. Check Dashboard for "Completed" status.
+            </steps>
+        </test_case>
+    </verification>
+</implementation_plan>

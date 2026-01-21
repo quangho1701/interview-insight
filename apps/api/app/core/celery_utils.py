@@ -1,6 +1,7 @@
 """Celery application configuration for task production."""
 
 from celery import Celery
+import ssl
 
 from app.core.config import get_settings
 
@@ -25,6 +26,13 @@ celery_app.conf.update(
     # Prevent task execution on producer side
     task_always_eager=False,
 )
+
+# Configure SSL for Redis if using rediss://
+if settings.get_redis_url().startswith("rediss://"):
+    celery_app.conf.update(
+        broker_use_ssl={"ssl_cert_reqs": ssl.CERT_NONE},
+        redis_backend_use_ssl={"ssl_cert_reqs": ssl.CERT_NONE},
+    )
 
 # Task name constants for type safety
 TASK_PROCESS_INTERVIEW = "vibecheck.tasks.process_interview"
